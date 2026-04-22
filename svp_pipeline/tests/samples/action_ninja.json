@@ -1,0 +1,153 @@
+{
+  "schema_version": "SVP.v4x-five-layer.video",
+  "por_identity": "満月の夜、瓦屋根の上を右から左へ疾走する忍者のシルエット。",
+  "por_core": [
+    "疾走する忍者のシルエット",
+    "背後に浮かぶ満月",
+    "黒く艶のある瓦屋根の稜線"
+  ],
+  "grv_anchor": [
+    "忍者のシルエット",
+    "満月の円形"
+  ],
+  "de_profile": {
+    "target_mean": 0.08,
+    "tolerance": 0.04
+  },
+  "composition_layer": {
+    "por_core": ["シルエットの輪郭", "満月と屋根稜線の対比"],
+    "constraints": {
+      "required": [
+        "忍者のシルエットが画面中央〜右側に常時存在",
+        "満月が忍者の背後の画面上部に配置"
+      ],
+      "forbidden": [
+        "忍者の顔のクローズアップ",
+        "昼光的な色味"
+      ],
+      "notes": "逆光構図。ディテールよりも輪郭線の明瞭さを優先。"
+    },
+    "camera_angle": "low_angle",
+    "framing": "full_shot",
+    "aspect_ratio": "21:9",
+    "depth_layers": [
+      "前景: 瓦屋根の手前の稜線",
+      "中景: 疾走する忍者",
+      "遠景: 満月と薄雲"
+    ]
+  },
+  "face_layer": {
+    "por_core": ["覆面から覗く鋭い視線"],
+    "constraints": {
+      "required": ["視線は進行方向(画面左)に向く"],
+      "forbidden": ["覆面の脱落", "カメラ目線"],
+      "notes": "逆光で顔はほぼシルエット化する。表情は視線の方向で示す。"
+    },
+    "expression": "張り詰めた集中、無表情に近い",
+    "eye_direction": "forward_left",
+    "age_range": "adult",
+    "distinctive_features": ["黒覆面", "目元のみ露出"]
+  },
+  "style_layer": {
+    "por_core": ["シルエットの純度", "月光の冷たい色温度"],
+    "constraints": {
+      "required": ["輪郭は高コントラストで潰れない"],
+      "forbidden": ["強い暖色の混入", "過度な粒子ノイズ"]
+    },
+    "line_density": "high",
+    "specular_reflect": "medium",
+    "glow_radius": "medium",
+    "entropy": "high"
+  },
+  "pose_layer": {
+    "por_core": ["疾走時の前傾姿勢", "片腕を後方に引く体幹"],
+    "constraints": {
+      "required": ["片足は必ず屋根面に接触", "両手は走行動作として自然に振られる"],
+      "forbidden": [
+        "両足が同時に画面外",
+        "腕の不自然な貫通",
+        "空中停止"
+      ],
+      "notes": "走行の各フレームで接地点が明確であること。優先度高。"
+    },
+    "body_pose": "疾走、前傾、体幹ねじれ",
+    "hand_state": "free: swinging_for_running",
+    "contact_points": ["右足裏-瓦の稜線", "左足裏-瓦の次の稜線へ着地"]
+  },
+  "motion_layer": {
+    "por_core": ["右から左への直線的な疾走", "満月との相対位置の保持"],
+    "constraints": {
+      "required": [
+        "忍者は常に画面内にとどまる",
+        "満月は常に画面上部1/3に存在"
+      ],
+      "forbidden": [
+        "PoR_core要素のフレームアウト",
+        "grv_anchor主要要素の画面外移動",
+        "カメラの急激な方向転換",
+        "モーションブラーで輪郭が完全に溶ける"
+      ]
+    },
+    "duration_seconds": 6,
+    "camera_movement": {
+      "type": "handheld",
+      "speed": "fast"
+    },
+    "subject_motion": [
+      {
+        "subject": "忍者",
+        "action": "屋根を蹴って右から左へ疾走",
+        "intensity": "dramatic"
+      },
+      {
+        "subject": "薄雲",
+        "action": "満月の手前をゆっくり流れる",
+        "intensity": "subtle"
+      }
+    ],
+    "temporal_anchors": [
+      {
+        "time_range": "0-2s",
+        "description": "画面右端から忍者が進入、最初の一歩を踏み込む"
+      },
+      {
+        "time_range": "2-4s",
+        "description": "画面中央で満月と重なる瞬間、最大の疾走感"
+      },
+      {
+        "time_range": "4-6s",
+        "description": "画面左寄りへ抜け、次の屋根へ跳躍直前で終了"
+      }
+    ]
+  },
+  "style_family": "ANIME_CELL_STD_v1",
+  "style_pack": "moonlit_action",
+  "color_axis": ["moon_silver_blue", "deep_midnight_black"],
+  "texture_axis": ["glossy_clay_tile", "thin_cloud_veil"],
+  "c3": {
+    "context": "夜、満月、瓦屋根が連なる古い日本家屋の上。",
+    "constraints": {
+      "required": ["光源は満月のみ"],
+      "forbidden": ["電灯・提灯の光源", "現代的建造物の写り込み"],
+      "motion_forbidden": [
+        "忍者が急停止して静止する",
+        "カメラが被写体を追い越して先行する",
+        "忍者のフレームアウト"
+      ]
+    },
+    "consistency": [
+      "忍者の装束は全フレームで同一",
+      "満月のサイズは微細な遠近以外変化しない"
+    ]
+  },
+  "axes": {
+    "composition": "低アングルから屋根稜線と満月を同一フレームに収める",
+    "light_air": "冷たい夜気、月光のみの硬い逆光",
+    "expression": "シルエットによる表情の暗示、緊張",
+    "stroke": "高密度のコントラスト線、シルエット優先",
+    "motion": "右から左への高速水平移動",
+    "material": "艶のある瓦、黒い装束、薄雲",
+    "narrative": "標的へ向かう道中の一コマ、任務の途上",
+    "emotion_symbol": "満月=見守る者、黒い影=意志"
+  }
+}
