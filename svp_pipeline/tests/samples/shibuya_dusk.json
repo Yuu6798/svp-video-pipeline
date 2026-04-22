@@ -1,0 +1,137 @@
+{
+  "schema_version": "SVP.v4x-five-layer.video",
+  "por_identity": "雨上がりの夕暮れ、渋谷スクランブル交差点で少女が傘を畳む一瞬。",
+  "por_core": [
+    "少女の手元で閉じられる半透明の傘",
+    "濡れた路面に反射するネオンの赤と青",
+    "横断する人々のシルエット群"
+  ],
+  "grv_anchor": [
+    "少女の傘と手元",
+    "路面のネオン反射帯"
+  ],
+  "de_profile": {
+    "target_mean": 0.06,
+    "tolerance": 0.03
+  },
+  "composition_layer": {
+    "por_core": ["傘と手元", "ネオン反射帯"],
+    "constraints": {
+      "required": ["手元が画面中央下寄りに存在", "路面反射が画面下1/3を占める"],
+      "forbidden": ["傘のフレームアウト", "顔のクローズアップ"],
+      "notes": "PoRの中心は手元の傘。少女の表情よりも手の所作を優先。"
+    },
+    "camera_angle": "eye_level",
+    "framing": "medium_shot",
+    "aspect_ratio": "16:9",
+    "depth_layers": [
+      "前景: 少女の手元と傘",
+      "中景: 横断歩道の群衆シルエット",
+      "遠景: ネオン看板群と濡れたビル壁"
+    ]
+  },
+  "face_layer": {
+    "por_core": ["伏し目", "わずかに緩んだ口元"],
+    "constraints": {
+      "required": ["視線は傘の先端に向く"],
+      "forbidden": ["カメラ目線", "大きな笑顔"]
+    },
+    "expression": "穏やかな安堵、わずかに微笑",
+    "eye_direction": "downward_to_umbrella",
+    "age_range": "late teens",
+    "distinctive_features": ["前髪が雨でわずかに湿っている"]
+  },
+  "style_layer": {
+    "por_core": ["ネオンの彩度", "湿気の残る空気感"],
+    "constraints": {
+      "required": ["光源はネオンと街灯のみ"],
+      "forbidden": ["強い太陽光", "過剰なブルーム"]
+    },
+    "line_density": "medium",
+    "specular_reflect": "high",
+    "glow_radius": "narrow",
+    "entropy": "medium"
+  },
+  "pose_layer": {
+    "por_core": ["両手で傘を閉じる所作"],
+    "constraints": {
+      "required": ["右手は傘の持ち手、左手は傘の途中を軽く支える"],
+      "forbidden": ["手のフレームアウト", "不自然な指の重なり"],
+      "notes": "手の描写を最優先。指の関節位置が破綻しないこと。"
+    },
+    "body_pose": "立位、体幹わずかに前傾",
+    "hand_state": "occupied: folding_umbrella",
+    "contact_points": ["右手-傘の持ち手", "左手-傘の中央", "足裏-濡れたアスファルト"]
+  },
+  "motion_layer": {
+    "por_core": ["傘が閉じきる瞬間", "ネオン反射の揺らぎ"],
+    "constraints": {
+      "required": ["傘が最終的に完全に閉じた状態で終わる"],
+      "forbidden": [
+        "PoR_core要素のフレームアウト",
+        "grv_anchor主要要素の画面外移動",
+        "過剰な手ブレ"
+      ]
+    },
+    "duration_seconds": 5,
+    "camera_movement": {
+      "type": "dolly_in",
+      "speed": "slow"
+    },
+    "subject_motion": [
+      {
+        "subject": "少女の両手",
+        "action": "傘を折り畳む",
+        "intensity": "moderate"
+      },
+      {
+        "subject": "背景の群衆",
+        "action": "交差点を横切る",
+        "intensity": "subtle"
+      }
+    ],
+    "temporal_anchors": [
+      {
+        "time_range": "0-2s",
+        "description": "傘が開いた状態から閉じ始める"
+      },
+      {
+        "time_range": "2-4s",
+        "description": "傘が徐々に閉じる、カメラ微速前進"
+      },
+      {
+        "time_range": "4-5s",
+        "description": "傘が完全に閉じ、少女の手元に収まる"
+      }
+    ]
+  },
+  "style_family": "ANIME_CELL_STD_v1",
+  "style_pack": "urban_nightscape",
+  "color_axis": ["neon_magenta_cyan", "wet_asphalt_black"],
+  "texture_axis": ["wet_reflective_surface", "soft_cel_shading"],
+  "c3": {
+    "context": "平日夕方、雨が上がったばかりの渋谷スクランブル交差点。",
+    "constraints": {
+      "required": ["少女は主被写体として常に画面内", "ネオン反射の赤青バランス"],
+      "forbidden": ["昼の強い自然光", "車両のヘッドライト強フレア"],
+      "motion_forbidden": [
+        "カメラが急激に方向転換する",
+        "被写体が突如画面外に走り去る"
+      ]
+    },
+    "consistency": [
+      "傘の形状と色は全フレームで一致",
+      "少女の髪の湿り具合は時間内で変化しない"
+    ]
+  },
+  "axes": {
+    "composition": "中央下寄りに手元を据え、遠景ネオンで奥行きを作る",
+    "light_air": "雨上がりの湿った冷気、ネオン由来の間接光",
+    "expression": "静かな安堵、内向的",
+    "stroke": "中密度のセル線、濡れ面のハイライト強調",
+    "motion": "微速前進と静かな手の所作",
+    "material": "濡れたアスファルト、半透明ビニール傘、化学繊維の制服",
+    "narrative": "雨が止んだ、という小さな転換点の記録",
+    "emotion_symbol": "閉じられた傘=一区切り"
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "schema_version": "SVP.v4x-five-layer.video",
+  "por_identity": "朝の窓辺、磨かれた木製テーブル上の一輪の白バラから花弁が一枚だけ落ちる静物。",
+  "por_core": [
+    "一輪の白バラの中心部",
+    "磨かれた木製テーブルの木目",
+    "窓から差し込む斜めの朝光"
+  ],
+  "grv_anchor": [
+    "白バラの花芯",
+    "落下する単一の花弁"
+  ],
+  "de_profile": {
+    "target_mean": 0.02,
+    "tolerance": 0.02
+  },
+  "composition_layer": {
+    "por_core": ["花芯の中心配置", "斜光の帯"],
+    "constraints": {
+      "required": ["花が画面中央やや左、斜光が右上から差す"],
+      "forbidden": ["人物の写り込み", "テーブル外の背景露出"],
+      "notes": "極浅い被写界深度で花芯にピント。"
+    },
+    "camera_angle": "eye_level",
+    "framing": "extreme_close_up",
+    "aspect_ratio": "16:9",
+    "depth_layers": [
+      "前景: 手前の花弁の縁",
+      "中景: 花芯と茎",
+      "遠景: ぼけた木目とわずかな窓辺"
+    ]
+  },
+  "face_layer": {
+    "por_core": [],
+    "constraints": {
+      "required": [],
+      "forbidden": ["人物・顔・手の一切の写り込み"],
+      "notes": "静物構図のため顔の意味は無効化。"
+    },
+    "expression": "n/a (no subject)",
+    "eye_direction": "n/a (no subject)",
+    "age_range": null,
+    "distinctive_features": []
+  },
+  "style_layer": {
+    "por_core": ["朝光の色温度", "極低ノイズ"],
+    "constraints": {
+      "required": ["暖色寄りの朝光"],
+      "forbidden": ["ネオン的彩度", "過剰なグレイン"]
+    },
+    "line_density": "low",
+    "specular_reflect": "medium",
+    "glow_radius": "narrow",
+    "entropy": "low"
+  },
+  "pose_layer": {
+    "por_core": [],
+    "constraints": {
+      "required": [],
+      "forbidden": ["人体の写り込み"],
+      "notes": "静物構図のためポーズの意味は無効化。"
+    },
+    "body_pose": "n/a (no subject)",
+    "hand_state": "n/a (no subject)",
+    "contact_points": []
+  },
+  "motion_layer": {
+    "por_core": ["単一花弁の静かな落下"],
+    "constraints": {
+      "required": ["花弁が重力に従って自然に落ちる"],
+      "forbidden": [
+        "PoR_core要素のフレームアウト",
+        "grv_anchor主要要素の画面外移動",
+        "花全体の揺れ",
+        "風による多数花弁の飛散"
+      ]
+    },
+    "duration_seconds": 4,
+    "camera_movement": {
+      "type": "static",
+      "speed": "slow"
+    },
+    "subject_motion": [
+      {
+        "subject": "最外周の花弁1枚",
+        "action": "静かに剥離しテーブル上に落下",
+        "intensity": "subtle"
+      }
+    ],
+    "temporal_anchors": [
+      {
+        "time_range": "0-2s",
+        "description": "花は完全に静止、斜光が微細に揺れる"
+      },
+      {
+        "time_range": "2-3s",
+        "description": "最外周の花弁が剥離を開始"
+      },
+      {
+        "time_range": "3-4s",
+        "description": "花弁がテーブルに着地、波紋のような小さな影"
+      }
+    ]
+  },
+  "style_family": "PHOTO_MACRO_STILL_v1",
+  "style_pack": "morning_still_life",
+  "color_axis": ["warm_ivory", "walnut_brown"],
+  "texture_axis": ["velvet_petal", "polished_wood_grain"],
+  "c3": {
+    "context": "早朝の静かな室内、窓辺のテーブル。風はほぼ無し。",
+    "constraints": {
+      "required": ["被写体は白バラ一輪のみ"],
+      "forbidden": ["人物", "動物", "電子機器の写り込み"],
+      "motion_forbidden": [
+        "カメラの移動",
+        "複数花弁の同時落下",
+        "花全体のスウェイ"
+      ]
+    },
+    "consistency": [
+      "花弁の数は1枚落下を除いて変化しない",
+      "木目のパターンは静止したままフレームを通じて一致"
+    ]
+  },
+  "axes": {
+    "composition": "中央やや左の花芯、右上から斜光で奥行きを与える",
+    "light_air": "朝の澄んだ乾いた空気、暖色の柔らかい拡散光",
+    "expression": "無人、静謐",
+    "stroke": "低密度、写真的な諧調",
+    "motion": "ほぼ静止、単一花弁の重力落下のみ",
+    "material": "ベルベット質の花弁、磨かれた無垢材",
+    "narrative": "静けさの中で起きる、ごく小さな時間の進行",
+    "emotion_symbol": "落ちる花弁=時間の経過"
+  }
+}
