@@ -53,3 +53,31 @@ Recommended observation prompts:
 3. shibuya_dusk case (urban portrait)
 4. interaction-bias suppression prompt
 5. forbidden enforcement prompt
+
+## M3 Model Switch and Scope Note
+- M3 switched the image backend from OpenAI `gpt-image-2` to Gemini
+  `gemini-3-pro-image-preview`.
+- Reason: OpenAI organization verification was not available in the M3 timeline,
+  so `gpt-image-2` execution was blocked.
+- Scope impact: `gpt-image-2` forbidden-effect evaluation was removed from M3.
+  M3 verifies forbidden behavior on Gemini only.
+- `gpt-image-2` parity checks are deferred to a future milestone after OpenAI
+  org verification is available.
+
+## M3 Forbidden Observation Snapshot (Gemini, 2026-04-23)
+Output directory:
+`out/m3-observation-20260423-122838/` (5 samples, model=`gemini-3-pro-image-preview`)
+
+- `still_life_macro`: no human subject observed. Forbidden intent was respected.
+- `action_ninja_21_9`: PoR elements were present (`21:9`, moon/roof/silhouette);
+  no explicit forbidden violation observed.
+- `shibuya_dusk`: baseline composition matched expected anchors
+  (subject + rain reflection + crowd context).
+- `interaction_bias_suppression`: sword-present but non-combat posture generated;
+  attack-motion forbiddens were respected.
+- `forbidden_smile`: neutral expression generated; no obvious smile/grin observed.
+
+Notes:
+- This snapshot is qualitative (manual visual inspection), not a scored benchmark.
+- C-group risk items (reverse grip, linear-object handling edge cases, soft-body
+  edge cases) are deferred to M4 for re-evaluation.
