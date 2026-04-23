@@ -28,6 +28,12 @@ class FakePlanner:
         return self.svp
 
 
+class FakePlannerWithEffectiveModel(FakePlanner):
+    def __init__(self, svp: SVPVideo, effective_model: str) -> None:
+        super().__init__(svp)
+        self.model = effective_model
+
+
 class FakeImageGenerator:
     def __init__(self) -> None:
         self.calls: list[tuple[SVPVideo, str]] = []
@@ -103,6 +109,23 @@ def test_log_json_format(tmp_path: Path) -> None:
     assert "total_elapsed_sec" in log_data
     assert log_data["outputs"]["svp"] == "svp.json"
     assert log_data["outputs"]["image"] == "image.png"
+
+
+def test_log_uses_effective_planner_model(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    planner = FakePlannerWithEffectiveModel(svp, effective_model="claude-opus-4-6")
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner_model="claude-opus-4-7",
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("planner model log", no_video=True)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert log_data["stages"]["planner"]["model"] == "claude-opus-4-6"
 
 
 def test_timestamp_directory_created(tmp_path: Path) -> None:

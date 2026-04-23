@@ -163,5 +163,8 @@ class ImageGenerator:
             "RECITATION",
             "MODEL_ARMOR",
             "IMAGE_SAFETY",
+            "IMAGE_PROHIBITED_CONTENT",
+            "IMAGE_RECITATION",
+            "NO_IMAGE",
         }
         return normalized in refusal_reasons

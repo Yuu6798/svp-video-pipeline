@@ -122,6 +122,19 @@ def test_refusal_raises_image_refusal_error() -> None:
         generator.generate(svp=svp)
 
 
+@pytest.mark.parametrize(
+    "finish_reason",
+    ["IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "NO_IMAGE"],
+)
+def test_image_finish_refusal_reasons_raise_image_refusal_error(finish_reason: str) -> None:
+    svp = _load("shibuya_dusk.json")
+    client = DummyClient(response=build_refusal_response(finish_reason))
+    generator = ImageGenerator(client=client)
+
+    with pytest.raises(ImageRefusalError):
+        generator.generate(svp=svp)
+
+
 def test_api_error_wrapped() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(error=RuntimeError("upstream failed"))

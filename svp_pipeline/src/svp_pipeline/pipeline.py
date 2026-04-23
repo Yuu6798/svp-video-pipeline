@@ -77,11 +77,12 @@ class Pipeline:
         svp_path = run_dir / "svp.json"
         svp_path.write_text(svp.model_dump_json(indent=2), encoding="utf-8")
 
+        planner_model_for_log = self._resolve_planner_model_for_log()
         planner_stage: dict[str, Any] = {
             "status": "ok",
             "elapsed_sec": planner_elapsed,
             "cost_usd": self.PLANNER_ESTIMATED_COST_USD,
-            "model": self.planner_model,
+            "model": planner_model_for_log,
         }
 
         image_path: Path | None = None
@@ -157,3 +158,14 @@ class Pipeline:
             index += 1
         candidate.mkdir(parents=True, exist_ok=False)
         return candidate
+
+    def _resolve_planner_model_for_log(self) -> str:
+        effective_model = getattr(self._planner, "model", None)
+        if isinstance(effective_model, str) and effective_model:
+            return effective_model
+
+        requested_model = getattr(self._planner, "requested_model", None)
+        if isinstance(requested_model, str) and requested_model:
+            return requested_model
+
+        return self.planner_model
