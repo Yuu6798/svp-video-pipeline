@@ -106,6 +106,16 @@ def test_plan_injects_duration() -> None:
     assert svp.motion_layer.duration_seconds == 8
 
 
+def test_plan_rejects_non_integer_duration() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    with pytest.raises(ValueError, match="integer"):
+        planner.plan("duration type test", duration=8.5)
+
+    assert len(client.messages.calls) == 0
+
+
 def test_forbidden_injection_when_missing() -> None:
     client = DummyClient(responses=[MISSING_FORBIDDEN_RESPONSE])
     planner = Planner(client=client)

@@ -159,6 +159,8 @@ class Planner:
     def _build_user_prompt(self, user_prompt: str, duration: int | None) -> str:
         if duration is None:
             return user_prompt
+        if not isinstance(duration, int) or isinstance(duration, bool):
+            raise ValueError("duration must be an integer between 4 and 15 seconds")
         if not 4 <= duration <= 15:
             raise ValueError("duration must be between 4 and 15 seconds")
         return f"{user_prompt}\n\n追加要件: duration_seconds は {duration} 秒にしてください。"
