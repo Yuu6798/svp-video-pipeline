@@ -17,3 +17,15 @@ class PlannerSchemaError(PlannerError):
 
 class PlannerAPIError(PlannerError):
     """Raised when Anthropic API calls fail in planner."""
+
+
+class ImageGenerationError(SVPPipelineError):
+    """Image-layer failure."""
+
+
+class ImageAPIError(ImageGenerationError):
+    """Raised when Gemini API calls fail."""
+
+
+class ImageRefusalError(ImageGenerationError):
+    """Raised when the image model refuses generation."""
