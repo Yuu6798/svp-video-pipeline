@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from ..exceptions import PlannerAPIError, PlannerSchemaError
 from ..schema import SVPVideo
 
-PlannerModel = Literal["claude-opus-4-7", "claude-haiku-4-5"]
+PlannerModel = Literal["claude-opus-4-7", "claude-opus-4-6", "claude-haiku-4-5"]
 
 
 class Planner:
@@ -20,6 +20,11 @@ class Planner:
 
     DEFAULT_MODEL: PlannerModel = "claude-opus-4-7"
     TOOL_NAME = "generate_svp_video"
+    _MODEL_ALIASES: dict[str, str] = {
+        "claude-opus-4-7": "claude-opus-4-6",
+        "claude-opus-4-6": "claude-opus-4-6",
+        "claude-haiku-4-5": "claude-haiku-4-5",
+    }
     REQUIRED_MOTION_FORBIDDEN: tuple[str, ...] = (
         "PoR_core要素のフレームアウト",
         "grv_anchor主要要素の画面外移動",
@@ -31,9 +36,10 @@ class Planner:
         api_key: str | None = None,
         client: Anthropic | Any | None = None,
     ) -> None:
-        if model not in ("claude-opus-4-7", "claude-haiku-4-5"):
+        if model not in self._MODEL_ALIASES:
             raise ValueError(f"unsupported planner model: {model}")
-        self.model: PlannerModel = model
+        self.requested_model = model
+        self.model = self._MODEL_ALIASES[model]
         self._client = client if client is not None else Anthropic(api_key=api_key)
         self._system_prompt = _load_system_prompt()
 

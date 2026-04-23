@@ -74,7 +74,25 @@ def test_plan_with_opus_model() -> None:
 
     planner.plan("opus model test")
 
-    assert client.messages.calls[0]["model"] == "claude-opus-4-7"
+    assert client.messages.calls[0]["model"] == "claude-opus-4-6"
+
+
+def test_plan_with_supported_opus_alias() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(model="claude-opus-4-6", client=client)
+
+    planner.plan("opus alias model test")
+
+    assert client.messages.calls[0]["model"] == "claude-opus-4-6"
+
+
+def test_plan_default_model_resolves_to_supported_opus_alias() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    planner.plan("default model resolution test")
+
+    assert client.messages.calls[0]["model"] == "claude-opus-4-6"
 
 
 def test_plan_with_haiku_model() -> None:
