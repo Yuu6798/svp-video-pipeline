@@ -13,14 +13,43 @@
 （M5 で執筆）
 
 ## Known Limitations
-- 仕様書からの逸脱:
-  - duration_seconds: ge=1, le=15 → ge=4, le=15 に補正（fal.ai 実仕様）
-  - aspect_ratio: 4 値 → 7 値に拡張（fal.ai 実仕様）
-  - resolution: SVP 非搭載、CLI --cheap で 480p / それ以外 720p
-- 未検証事項:
-  - gpt-image-2 における forbidden 効力（M3 で評価予定）
-  - motion_layer の最適記法（M4 で評価予定）
-  - C 群リスク（逆手・線状物体・軟体）の動画化
+- M3 image backend is `gemini-3-pro-image-preview`.
+- OpenAI `gpt-image-2` backend is deferred until organization verification is available.
+- `auto` aspect ratio is mapped to `16:9` in M3 because Gemini image API does not accept `auto`.
+- M3 only supports planner -> image. Video stage remains out of scope until M4.
+- JSON-structured prompt sections are preserved to keep the same "JSON Supremacy" behavior observed in prior experiments.
 
 ## Development
 （M5 で執筆）
+
+## Manual Gemini Verification (M3)
+Run the following command locally after setting API keys:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export GOOGLE_API_KEY=...
+
+python -c "
+from pathlib import Path
+from svp_pipeline.pipeline import Pipeline
+
+p = Pipeline(
+    output_dir=Path('./out'),
+    planner_model='claude-haiku-4-5',
+)
+result = p.run(
+    '夕暮れの渋谷で少女が傘を畳む',
+    duration=5,
+    no_video=True,
+)
+print(f'Image saved: {result.image_path}')
+print(f'Total cost: ${result.total_cost_usd:.4f}')
+"
+```
+
+Recommended observation prompts:
+1. still_life case (no human subject)
+2. action_ninja case (`21:9`)
+3. shibuya_dusk case (urban portrait)
+4. interaction-bias suppression prompt
+5. forbidden enforcement prompt
