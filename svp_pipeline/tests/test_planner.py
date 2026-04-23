@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
 import anthropic
 import httpx
 import pytest
+from anthropic.types import Message, ToolUseBlock, Usage
 
 from svp_pipeline.exceptions import PlannerAPIError, PlannerSchemaError
 from svp_pipeline.generator import Planner
@@ -97,10 +99,11 @@ def test_plan_injects_duration() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
 
-    planner.plan("duration test", duration=8)
+    svp = planner.plan("duration test", duration=8)
 
     user_content = client.messages.calls[0]["messages"][0]["content"]
     assert "8 秒" in user_content
+    assert svp.motion_layer.duration_seconds == 8
 
 
 def test_forbidden_injection_when_missing() -> None:
@@ -148,6 +151,47 @@ def test_pydantic_validation_error_triggers_retry() -> None:
     retry_messages = client.messages.calls[1]["messages"]
     assert retry_messages[-1]["content"][0]["type"] == "tool_result"
     assert retry_messages[-1]["content"][0]["is_error"] is True
+
+
+def test_retry_returns_tool_results_for_all_prior_tool_uses() -> None:
+    invalid_input = copy.deepcopy(VALID_SHIBUYA_RESPONSE.content[0].input)
+    invalid_input["por_core"] = ["one", "two"]
+    extra_input = copy.deepcopy(VALID_STILL_LIFE_RESPONSE.content[0].input)
+    first_response = Message(
+        id="msg_multi_tool_use",
+        content=[
+            ToolUseBlock(
+                id="toolu_invalid",
+                name="generate_svp_video",
+                type="tool_use",
+                input=invalid_input,
+            ),
+            ToolUseBlock(
+                id="toolu_extra",
+                name="generate_svp_video",
+                type="tool_use",
+                input=extra_input,
+            ),
+        ],
+        model="claude-opus-4-7",
+        role="assistant",
+        type="message",
+        stop_reason="tool_use",
+        usage=Usage(input_tokens=1, output_tokens=1),
+    )
+    client = DummyClient(responses=[first_response, VALID_ACTION_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("retry should include all tool_result ids")
+
+    assert isinstance(svp, SVPVideo)
+    assert len(client.messages.calls) == 2
+    retry_messages = client.messages.calls[1]["messages"]
+    tool_results = retry_messages[-1]["content"]
+    assert len(tool_results) == 2
+    assert {block["tool_use_id"] for block in tool_results} == {"toolu_invalid", "toolu_extra"}
+    assert all(block["type"] == "tool_result" for block in tool_results)
+    assert all(block["is_error"] is True for block in tool_results)
 
 
 def test_two_consecutive_failures_raise() -> None:

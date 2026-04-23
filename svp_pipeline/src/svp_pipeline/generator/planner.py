@@ -60,13 +60,15 @@ class Planner:
                     self._append_retry_messages(
                         messages=messages,
                         response=response,
-                        tool_use_block=tool_use_block,
+                        fallback_tool_use_id=getattr(tool_use_block, "id", "tool_use_retry"),
                         validation_error=exc,
                     )
                     continue
                 raise PlannerSchemaError("planner output failed schema validation twice") from exc
 
-            return self._inject_motion_forbidden(svp)
+            svp = self._inject_motion_forbidden(svp)
+            svp = self._enforce_requested_duration(svp=svp, duration=duration)
+            return svp
 
         raise PlannerSchemaError("planner failed to produce a valid SVP output")
 
@@ -118,26 +120,39 @@ class Planner:
         self,
         messages: list[dict[str, Any]],
         response: Any,
-        tool_use_block: Any,
+        fallback_tool_use_id: str,
         validation_error: ValidationError,
     ) -> None:
-        tool_use_id = getattr(tool_use_block, "id", "tool_use_retry")
-        messages.append({"role": "assistant", "content": getattr(response, "content", [])})
+        assistant_content = getattr(response, "content", [])
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        tool_use_ids = [
+            getattr(block, "id", None)
+            for block in assistant_content
+            if getattr(block, "type", None) == "tool_use"
+        ]
+        tool_use_ids = [tool_use_id for tool_use_id in tool_use_ids if tool_use_id]
+        if not tool_use_ids:
+            tool_use_ids = [fallback_tool_use_id]
+
+        tool_results = []
+        for tool_use_id in tool_use_ids:
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "is_error": True,
+                    "content": (
+                        "Schema validation failed. Return one corrected "
+                        "generate_svp_video tool call only. "
+                        f"Error details: {validation_error.errors()}"
+                    ),
+                }
+            )
         messages.append(
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_id,
-                        "is_error": True,
-                        "content": (
-                            "Schema validation failed. Return one corrected "
-                            "generate_svp_video tool call only. "
-                            f"Error details: {validation_error.errors()}"
-                        ),
-                    }
-                ],
+                "content": tool_results,
             }
         )
 
@@ -160,6 +175,14 @@ class Planner:
 
         new_constraints = svp.motion_layer.constraints.model_copy(update={"forbidden": current})
         new_motion_layer = svp.motion_layer.model_copy(update={"constraints": new_constraints})
+        return svp.model_copy(update={"motion_layer": new_motion_layer})
+
+    def _enforce_requested_duration(self, svp: SVPVideo, duration: int | None) -> SVPVideo:
+        if duration is None:
+            return svp
+        if svp.motion_layer.duration_seconds == duration:
+            return svp
+        new_motion_layer = svp.motion_layer.model_copy(update={"duration_seconds": duration})
         return svp.model_copy(update={"motion_layer": new_motion_layer})
 
 
