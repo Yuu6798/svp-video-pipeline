@@ -66,6 +66,23 @@ def _collect_forbidden(svp: SVPVideo) -> list[str]:
     return _dedupe_keep_order(merged)
 
 
+def _collect_required(svp: SVPVideo) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    layer_required = [
+        ("composition", svp.composition_layer.constraints.required),
+        ("face", svp.face_layer.constraints.required),
+        ("style", svp.style_layer.constraints.required),
+        ("pose", svp.pose_layer.constraints.required),
+        ("global", svp.c3.constraints.required),
+    ]
+    for layer, required_items in layer_required:
+        for item in required_items:
+            normalized = item.strip()
+            if normalized:
+                items.append((layer, normalized))
+    return items
+
+
 def render_image_prompt(svp: SVPVideo) -> str:
     """Render image-layer prompt text from SVPVideo.
 
@@ -74,6 +91,7 @@ def render_image_prompt(svp: SVPVideo) -> str:
 
     por_core_text = ", ".join(svp.por_core)
     grv_anchor_text = ", ".join(svp.grv_anchor)
+    required_items = _collect_required(svp)
     avoid_items = _collect_forbidden(svp)
     avoid_text = ", ".join(avoid_items) if avoid_items else "None"
 
@@ -123,6 +141,17 @@ def render_image_prompt(svp: SVPVideo) -> str:
 
     if svp.c3.consistency:
         lines.extend(f"- {item}" for item in svp.c3.consistency)
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Required Constraints",
+        ]
+    )
+    if required_items:
+        lines.extend(f"- [{layer}] {item}" for layer, item in required_items)
     else:
         lines.append("- None")
 

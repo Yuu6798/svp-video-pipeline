@@ -74,6 +74,29 @@ def test_render_aggregates_forbidden() -> None:
         assert item in prompt
 
 
+def test_render_includes_required_constraints() -> None:
+    svp = _load("shibuya_dusk.json")
+    payload = copy.deepcopy(svp.model_dump())
+
+    payload["composition_layer"]["constraints"]["required"] = ["REQ_COMPOSITION_UNIQUE"]
+    payload["face_layer"]["constraints"]["required"] = ["REQ_FACE_UNIQUE"]
+    payload["style_layer"]["constraints"]["required"] = ["REQ_STYLE_UNIQUE"]
+    payload["pose_layer"]["constraints"]["required"] = ["REQ_POSE_UNIQUE"]
+    payload["c3"]["constraints"]["required"] = ["REQ_GLOBAL_UNIQUE"]
+    payload["motion_layer"]["constraints"]["required"] = ["REQ_MOTION_UNIQUE_SHOULD_NOT_RENDER"]
+
+    mutated = SVPVideo.model_validate(payload)
+    prompt = render_image_prompt(mutated)
+
+    assert "## Required Constraints" in prompt
+    assert "REQ_COMPOSITION_UNIQUE" in prompt
+    assert "REQ_FACE_UNIQUE" in prompt
+    assert "REQ_STYLE_UNIQUE" in prompt
+    assert "REQ_POSE_UNIQUE" in prompt
+    assert "REQ_GLOBAL_UNIQUE" in prompt
+    assert "REQ_MOTION_UNIQUE_SHOULD_NOT_RENDER" not in prompt
+
+
 def test_render_handles_no_subject() -> None:
     svp = _load("still_life_macro.json")
     prompt = render_image_prompt(svp)
