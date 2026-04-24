@@ -7,7 +7,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from multiprocessing import Process, Queue
 from pathlib import Path
+from queue import Empty
 from typing import Any, Literal
 
 import fal_client
@@ -19,6 +21,35 @@ from ..utils.prompt_render import render_motion_prompt
 
 VideoTier = Literal["standard", "fast"]
 VideoResolution = Literal["480p", "720p"]
+TimeoutMode = Literal["process", "thread"]
+
+
+def _subscribe_worker(
+    endpoint: str,
+    arguments: dict[str, Any],
+    result_queue: Queue,
+) -> None:
+    """Run fal subscribe in a child process and return payload via queue."""
+    try:
+        result = fal_client.subscribe(
+            endpoint,
+            arguments=arguments,
+            with_logs=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        result_queue.put(
+            {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+    else:
+        result_queue.put(
+            {
+                "ok": True,
+                "result": result,
+            }
+        )
 
 
 @dataclass
@@ -57,10 +88,14 @@ class VideoGenerator:
         self,
         tier: VideoTier = "standard",
         api_key: str | None = None,
+        timeout_mode: TimeoutMode = "process",
     ) -> None:
         if tier not in ("standard", "fast"):
             raise ValueError(f"unsupported video tier: {tier!r}")
         self.tier: VideoTier = tier
+        if timeout_mode not in ("process", "thread"):
+            raise ValueError(f"unsupported timeout_mode: {timeout_mode!r}")
+        self.timeout_mode: TimeoutMode = timeout_mode
 
         resolved_key = api_key or os.getenv("FAL_KEY")
         if not resolved_key:
@@ -170,6 +205,16 @@ class VideoGenerator:
         raise VideoAPIError("seedance reference-to-video call failed")
 
     def _subscribe_with_timeout(self, endpoint: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self.timeout_mode == "thread":
+            return self._subscribe_with_timeout_thread(endpoint=endpoint, arguments=arguments)
+        return self._subscribe_with_timeout_process(endpoint=endpoint, arguments=arguments)
+
+    def _subscribe_with_timeout_thread(
+        self,
+        endpoint: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Timeout mode used in tests where monkeypatching fal_client is required."""
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(
             fal_client.subscribe,
@@ -191,6 +236,44 @@ class VideoGenerator:
         else:
             executor.shutdown(wait=True, cancel_futures=False)
 
+        if not isinstance(result, dict):
+            raise VideoAPIError("seedance response is not a dictionary")
+        return result
+
+    def _subscribe_with_timeout_process(
+        self,
+        endpoint: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Hard timeout mode for production path."""
+        result_queue: Queue = Queue(maxsize=1)
+        process = Process(
+            target=_subscribe_worker,
+            args=(endpoint, arguments, result_queue),
+            daemon=True,
+        )
+        process.start()
+        process.join(timeout=self.TIMEOUT_SEC)
+
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+            raise VideoTimeoutError(
+                f"seedance request exceeded timeout ({self.TIMEOUT_SEC}s)"
+            )
+
+        try:
+            payload = result_queue.get_nowait()
+        except Empty as exc:
+            raise VideoAPIError("seedance worker returned no payload") from exc
+
+        if not isinstance(payload, dict):
+            raise VideoAPIError("seedance worker returned invalid payload")
+
+        if not payload.get("ok"):
+            raise RuntimeError(payload.get("error", "seedance worker failed"))
+
+        result = payload.get("result")
         if not isinstance(result, dict):
             raise VideoAPIError("seedance response is not a dictionary")
         return result

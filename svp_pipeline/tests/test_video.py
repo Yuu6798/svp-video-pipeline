@@ -32,6 +32,14 @@ def _write_ref_image(tmp_path: Path) -> Path:
     return image_path
 
 
+def _make_generator(
+    *,
+    tier: str = "standard",
+    timeout_mode: str = "thread",
+) -> VideoGenerator:
+    return VideoGenerator(tier=tier, api_key="test", timeout_mode=timeout_mode)  # type: ignore[arg-type]
+
+
 def test_generate_returns_video_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     svp = _load("shibuya_dusk.json")
     image_path = _write_ref_image(tmp_path)
@@ -42,7 +50,7 @@ def test_generate_returns_video_result(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch, TINY_MP4_BYTES)
 
-    generator = VideoGenerator(tier="standard", api_key="test-fal-key")
+    generator = VideoGenerator(tier="standard", api_key="test-fal-key", timeout_mode="thread")
     result = generator.generate(svp=svp, image_path=image_path, output_path=output_path)
 
     assert result.mp4_path == output_path
@@ -64,7 +72,7 @@ def test_standard_tier_uses_correct_endpoint(
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(tier="standard", api_key="test").generate(
+    _make_generator(tier="standard").generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -82,7 +90,7 @@ def test_fast_tier_uses_correct_endpoint(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(tier="fast", api_key="test").generate(
+    _make_generator(tier="fast").generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -100,7 +108,7 @@ def test_duration_passed_as_string(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -120,7 +128,7 @@ def test_aspect_ratio_passed_directly(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -140,7 +148,7 @@ def test_image_url_in_image_urls_list(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -160,7 +168,7 @@ def test_generate_audio_always_false(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -178,7 +186,7 @@ def test_resolution_720p_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -196,7 +204,7 @@ def test_resolution_480p_applied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
     patch_httpx_download(monkeypatch)
 
-    VideoGenerator(api_key="test").generate(
+    _make_generator().generate(
         svp=svp,
         image_path=image_path,
         output_path=tmp_path / "video.mp4",
@@ -207,17 +215,17 @@ def test_resolution_480p_applied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_cost_calculation_standard_720p_5sec() -> None:
-    generator = VideoGenerator(tier="standard", api_key="test")
+    generator = _make_generator(tier="standard")
     assert generator._calculate_cost("standard", "720p", 5) == pytest.approx(1.512)
 
 
 def test_cost_calculation_fast_720p_5sec() -> None:
-    generator = VideoGenerator(tier="fast", api_key="test")
+    generator = _make_generator(tier="fast")
     assert generator._calculate_cost("fast", "720p", 5) == pytest.approx(1.2095)
 
 
 def test_cost_calculation_cheap_combo() -> None:
-    generator = VideoGenerator(tier="fast", api_key="test")
+    generator = _make_generator(tier="fast")
     assert generator._calculate_cost("fast", "480p", 5) == pytest.approx(0.5375)
 
 
@@ -230,7 +238,7 @@ def test_timeout_raises_video_timeout_error(
     patch_fal_upload(monkeypatch)
     patch_httpx_download(monkeypatch)
 
-    generator = VideoGenerator(api_key="test")
+    generator = _make_generator()
     monkeypatch.setattr(
         generator,
         "_subscribe_with_timeout",
@@ -251,7 +259,7 @@ def test_api_error_wrapped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     patch_fal_upload(monkeypatch)
     patch_httpx_download(monkeypatch)
 
-    generator = VideoGenerator(api_key="test")
+    generator = _make_generator()
     monkeypatch.setattr(
         generator,
         "_subscribe_with_timeout",
@@ -280,7 +288,7 @@ def test_download_failure_preserves_url(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr("svp_pipeline.generator.video.httpx.get", _raise_download)
 
-    generator = VideoGenerator(api_key="test")
+    generator = _make_generator()
     with pytest.raises(VideoDownloadError) as exc_info:
         generator.generate(
             svp=svp,
@@ -299,7 +307,7 @@ def test_retry_on_transient_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     patch_httpx_download(monkeypatch)
     monkeypatch.setattr("svp_pipeline.generator.video.time.sleep", lambda _s: None)
 
-    generator = VideoGenerator(api_key="test")
+    generator = _make_generator()
     subscribe = MagicMock(
         side_effect=[
             RuntimeError("connection reset by peer"),
@@ -325,7 +333,7 @@ def test_max_retries_exceeded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     patch_httpx_download(monkeypatch)
     monkeypatch.setattr("svp_pipeline.generator.video.time.sleep", lambda _s: None)
 
-    generator = VideoGenerator(api_key="test")
+    generator = _make_generator()
     subscribe = MagicMock(
         side_effect=[
             RuntimeError("connection reset 1"),
@@ -344,45 +352,53 @@ def test_max_retries_exceeded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert subscribe.call_count == 3
 
 
-def test_timeout_path_does_not_wait_for_executor_shutdown(
+def test_timeout_process_mode_terminates_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _FakeFuture:
-        def __init__(self) -> None:
-            self.cancel_called = False
+    class _FakeProcess:
+        def __init__(self, *args, **kwargs) -> None:
+            self.args = args
+            self.kwargs = kwargs
+            self._alive = True
+            self.started = False
+            self.terminated = False
+            self.join_calls: list[float | int | None] = []
 
-        def result(self, timeout=None):
-            raise TimeoutError("timeout")
+        def start(self) -> None:
+            self.started = True
 
-        def cancel(self) -> bool:
-            self.cancel_called = True
-            return True
+        def join(self, timeout=None) -> None:
+            self.join_calls.append(timeout)
 
-    class _FakeExecutor:
-        def __init__(self, max_workers: int = 1) -> None:
-            self.max_workers = max_workers
-            self.future = _FakeFuture()
-            self.shutdown_calls: list[tuple[bool, bool]] = []
+        def is_alive(self) -> bool:
+            return self._alive
 
-        def submit(self, *_args, **_kwargs):
-            return self.future
+        def terminate(self) -> None:
+            self.terminated = True
+            self._alive = False
 
-        def shutdown(self, wait: bool, cancel_futures: bool) -> None:
-            self.shutdown_calls.append((wait, cancel_futures))
+    class _FakeQueue:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
 
-    holder: dict[str, _FakeExecutor] = {}
+        def get_nowait(self):
+            raise RuntimeError("should not read queue on timeout")
 
-    def _executor_factory(max_workers: int = 1):
-        ex = _FakeExecutor(max_workers=max_workers)
-        holder["executor"] = ex
-        return ex
+    holder: dict[str, _FakeProcess] = {}
 
-    monkeypatch.setattr("svp_pipeline.generator.video.ThreadPoolExecutor", _executor_factory)
+    def _process_factory(*args, **kwargs):
+        proc = _FakeProcess(*args, **kwargs)
+        holder["process"] = proc
+        return proc
 
-    generator = VideoGenerator(api_key="test")
+    monkeypatch.setattr("svp_pipeline.generator.video.Process", _process_factory)
+    monkeypatch.setattr("svp_pipeline.generator.video.Queue", _FakeQueue)
+
+    generator = _make_generator(timeout_mode="process")
     with pytest.raises(VideoTimeoutError):
         generator._subscribe_with_timeout(endpoint="mock/endpoint", arguments={})
 
-    executor = holder["executor"]
-    assert executor.future.cancel_called is True
-    assert (False, True) in executor.shutdown_calls
+    process = holder["process"]
+    assert process.started is True
+    assert process.terminated is True
+    assert process.join_calls[0] == generator.TIMEOUT_SEC
