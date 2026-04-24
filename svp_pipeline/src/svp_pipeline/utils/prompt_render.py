@@ -86,6 +86,7 @@ def _collect_required(svp: SVPVideo) -> list[tuple[str, str]]:
 def _collect_motion_forbidden(svp: SVPVideo) -> list[str]:
     merged: list[str] = []
     merged.extend(svp.motion_layer.constraints.forbidden)
+    merged.extend(svp.c3.constraints.forbidden)
     merged.extend(svp.c3.constraints.motion_forbidden)
     return _dedupe_keep_order(merged)
 

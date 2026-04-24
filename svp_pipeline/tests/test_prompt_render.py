@@ -165,6 +165,8 @@ def test_render_motion_prompt_aggregates_forbidden() -> None:
     prompt = render_motion_prompt(svp)
     for item in svp.motion_layer.constraints.forbidden:
         assert item in prompt
+    for item in svp.c3.constraints.forbidden:
+        assert item in prompt
     for item in svp.c3.constraints.motion_forbidden:
         assert item in prompt
 
