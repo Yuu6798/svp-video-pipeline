@@ -1,4 +1,4 @@
-"""Orchestrate planner -> image stages (M3 scope)."""
+"""Orchestrate planner -> image -> video stages."""
 
 from __future__ import annotations
 
@@ -9,8 +9,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .exceptions import VideoDownloadError
 from .generator.image import ImageGenerator, ImageResolution
 from .generator.planner import Planner, PlannerModel
+from .generator.video import VideoGenerator, VideoResolution
 from .schema import SVPVideo
 
 
@@ -29,10 +31,7 @@ class PipelineResult:
 
 
 class Pipeline:
-    """planner -> image -> (video) orchestrator.
-
-    M3 supports planner and image only.
-    """
+    """planner -> image -> video orchestrator."""
 
     PLANNER_ESTIMATED_COST_USD = 0.012
 
@@ -45,6 +44,7 @@ class Pipeline:
         dry_run: bool = False,
         planner: Planner | None = None,
         image_generator: ImageGenerator | None = None,
+        video_generator: VideoGenerator | None = None,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,19 +54,19 @@ class Pipeline:
         self.cheap_mode = cheap_mode
         self.dry_run = dry_run
         self.image_resolution: ImageResolution = "1K" if cheap_mode else "2K"
+        self.video_tier = "fast" if cheap_mode else "standard"
+        self.video_resolution: VideoResolution = "480p" if cheap_mode else "720p"
 
         self._planner = planner if planner is not None else Planner(model=planner_model)
         self._image_generator = image_generator
+        self._video_generator = video_generator
 
     def run(
         self,
         user_prompt: str,
         duration: int | None = None,
-        no_video: bool = True,
+        no_video: bool = False,
     ) -> PipelineResult:
-        if not no_video:
-            raise NotImplementedError("video stage is not implemented in M3")
-
         total_started = time.perf_counter()
         run_dir = self._make_timestamp_dir()
 
@@ -86,6 +86,9 @@ class Pipeline:
         }
 
         image_path: Path | None = None
+        video_path: Path | None = None
+        video_stage: dict[str, Any] | None = None
+        total_cost = self.PLANNER_ESTIMATED_COST_USD
         if self.dry_run:
             estimated_image_cost = ImageGenerator.COST_PER_IMAGE_USD[self.image_resolution]
             resolved_aspect = ImageGenerator.ASPECT_FALLBACK.get(
@@ -100,7 +103,7 @@ class Pipeline:
                 "resolution": self.image_resolution,
                 "aspect_ratio": resolved_aspect,
             }
-            total_cost = self.PLANNER_ESTIMATED_COST_USD + estimated_image_cost
+            total_cost += estimated_image_cost
         else:
             generator = self._image_generator
             if generator is None:
@@ -117,21 +120,80 @@ class Pipeline:
                 "resolution": image_result.resolution,
                 "aspect_ratio": image_result.aspect_ratio,
             }
-            total_cost = self.PLANNER_ESTIMATED_COST_USD + image_result.cost_usd
+            total_cost += image_result.cost_usd
+
+            if not no_video:
+                video_generator = self._video_generator
+                if video_generator is None:
+                    video_generator = VideoGenerator(tier=self.video_tier)
+                    self._video_generator = video_generator
+
+                endpoint = (
+                    VideoGenerator.ENDPOINT_FAST
+                    if video_generator.tier == "fast"
+                    else VideoGenerator.ENDPOINT_STANDARD
+                )
+                output_video_path = run_dir / "video.mp4"
+                try:
+                    video_result = video_generator.generate(
+                        svp=svp,
+                        image_path=image_path,
+                        output_path=output_video_path,
+                        resolution=self.video_resolution,
+                    )
+                except VideoDownloadError as exc:
+                    video_path = None
+                    estimated_video_cost = video_generator._calculate_cost(
+                        tier=video_generator.tier,
+                        resolution=self.video_resolution,
+                        duration_seconds=svp.motion_layer.duration_seconds,
+                    )
+                    total_cost += estimated_video_cost
+                    video_stage = {
+                        "status": "download_failed",
+                        "elapsed_sec": None,
+                        "cost_usd": estimated_video_cost,
+                        "endpoint": endpoint,
+                        "tier": video_generator.tier,
+                        "resolution": self.video_resolution,
+                        "aspect_ratio": svp.composition_layer.aspect_ratio,
+                        "duration_seconds": svp.motion_layer.duration_seconds,
+                        "fal_request_id": None,
+                        "mp4_url": exc.mp4_url,
+                    }
+                else:
+                    video_path = video_result.mp4_path
+                    total_cost += video_result.cost_usd
+                    video_stage = {
+                        "status": "ok",
+                        "elapsed_sec": video_result.elapsed_sec,
+                        "cost_usd": video_result.cost_usd,
+                        "endpoint": endpoint,
+                        "tier": video_result.tier,
+                        "resolution": video_result.resolution,
+                        "aspect_ratio": video_result.aspect_ratio,
+                        "duration_seconds": video_result.duration_seconds,
+                        "fal_request_id": video_result.fal_request_id,
+                        "mp4_url": video_result.mp4_url,
+                    }
 
         total_elapsed = time.perf_counter() - total_started
+        stages: dict[str, Any] = {
+            "planner": planner_stage,
+            "image": image_stage,
+        }
+        if video_stage is not None:
+            stages["video"] = video_stage
         log_data = {
             "user_prompt": user_prompt,
             "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "stages": {
-                "planner": planner_stage,
-                "image": image_stage,
-            },
+            "stages": stages,
             "total_cost_usd": total_cost,
             "total_elapsed_sec": total_elapsed,
             "outputs": {
                 "svp": svp_path.name,
                 "image": image_path.name if image_path is not None else None,
+                "video": video_path.name if video_path is not None else None,
             },
         }
 
@@ -143,7 +205,7 @@ class Pipeline:
             svp=svp,
             svp_path=svp_path,
             image_path=image_path,
-            video_path=None,
+            video_path=video_path,
             log_path=log_path,
             total_cost_usd=total_cost,
             total_elapsed_sec=total_elapsed,
