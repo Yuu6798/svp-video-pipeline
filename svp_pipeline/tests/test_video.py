@@ -355,6 +355,8 @@ def test_max_retries_exceeded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_timeout_process_mode_terminates_child(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from queue import Empty
+
     class _FakeProcess:
         def __init__(self, *args, **kwargs) -> None:
             self.args = args
@@ -379,12 +381,18 @@ def test_timeout_process_mode_terminates_child(
 
     class _FakeQueue:
         def __init__(self, *args, **kwargs) -> None:
-            pass
+            self.timeouts: list[float | int | None] = []
 
-        def get_nowait(self):
-            raise RuntimeError("should not read queue on timeout")
+        def get(self, timeout=None):
+            self.timeouts.append(timeout)
+            raise Empty
 
-    holder: dict[str, _FakeProcess] = {}
+    holder: dict[str, _FakeProcess | _FakeQueue] = {}
+
+    def _queue_factory(*args, **kwargs):
+        queue = _FakeQueue(*args, **kwargs)
+        holder["queue"] = queue
+        return queue
 
     def _process_factory(*args, **kwargs):
         proc = _FakeProcess(*args, **kwargs)
@@ -392,13 +400,15 @@ def test_timeout_process_mode_terminates_child(
         return proc
 
     monkeypatch.setattr("svp_pipeline.generator.video.Process", _process_factory)
-    monkeypatch.setattr("svp_pipeline.generator.video.Queue", _FakeQueue)
+    monkeypatch.setattr("svp_pipeline.generator.video.Queue", _queue_factory)
 
     generator = _make_generator(timeout_mode="process")
     with pytest.raises(VideoTimeoutError):
         generator._subscribe_with_timeout(endpoint="mock/endpoint", arguments={})
 
     process = holder["process"]
+    queue = holder["queue"]
     assert process.started is True
     assert process.terminated is True
-    assert process.join_calls[0] == generator.TIMEOUT_SEC
+    assert process.join_calls[-1] == 5
+    assert queue.timeouts == [generator.TIMEOUT_SEC]

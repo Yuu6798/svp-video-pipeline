@@ -253,19 +253,22 @@ class VideoGenerator:
             daemon=True,
         )
         process.start()
-        process.join(timeout=self.TIMEOUT_SEC)
+        try:
+            payload = result_queue.get(timeout=self.TIMEOUT_SEC)
+        except Empty as exc:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+                raise VideoTimeoutError(
+                    f"seedance request exceeded timeout ({self.TIMEOUT_SEC}s)"
+                ) from exc
+            process.join(timeout=1)
+            raise VideoAPIError("seedance worker returned no payload") from exc
 
+        process.join(timeout=1)
         if process.is_alive():
             process.terminate()
             process.join(timeout=5)
-            raise VideoTimeoutError(
-                f"seedance request exceeded timeout ({self.TIMEOUT_SEC}s)"
-            )
-
-        try:
-            payload = result_queue.get_nowait()
-        except Empty as exc:
-            raise VideoAPIError("seedance worker returned no payload") from exc
 
         if not isinstance(payload, dict):
             raise VideoAPIError("seedance worker returned invalid payload")
