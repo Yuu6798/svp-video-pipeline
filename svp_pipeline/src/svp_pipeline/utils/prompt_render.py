@@ -90,6 +90,20 @@ def _collect_motion_forbidden(svp: SVPVideo) -> list[str]:
     return _dedupe_keep_order(merged)
 
 
+def _collect_motion_required(svp: SVPVideo) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    layer_required = [
+        ("motion", svp.motion_layer.constraints.required),
+        ("global", svp.c3.constraints.required),
+    ]
+    for layer, required_items in layer_required:
+        for item in required_items:
+            normalized = item.strip()
+            if normalized:
+                items.append((layer, normalized))
+    return items
+
+
 def render_image_prompt(svp: SVPVideo) -> str:
     """Render image-layer prompt text from SVPVideo.
 
@@ -176,6 +190,7 @@ def render_motion_prompt(svp: SVPVideo) -> str:
     """Render motion-layer prompt text from SVPVideo for Seedance r2v."""
 
     avoid_items = _collect_motion_forbidden(svp)
+    required_items = _collect_motion_required(svp)
     avoid_text = ", ".join(avoid_items) if avoid_items else "None"
 
     lines: list[str] = [
@@ -183,7 +198,7 @@ def render_motion_prompt(svp: SVPVideo) -> str:
         "",
         "## Reference",
         (
-            "Use [Image1] as the primary visual reference. Preserve subject identity, "
+            "Use @Image1 as the primary visual reference. Preserve subject identity, "
             "composition, lighting, and style continuity through the full clip."
         ),
         "",
@@ -258,6 +273,17 @@ def render_motion_prompt(svp: SVPVideo) -> str:
     )
     if svp.c3.consistency:
         lines.extend(f"- {item}" for item in svp.c3.consistency)
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Required Constraints",
+        ]
+    )
+    if required_items:
+        lines.extend(f"- [{layer}] {item}" for layer, item in required_items)
     else:
         lines.append("- None")
 

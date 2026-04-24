@@ -122,7 +122,7 @@ def test_render_for_all_three_samples() -> None:
 def test_render_motion_prompt_includes_image_reference() -> None:
     svp = _load("shibuya_dusk.json")
     prompt = render_motion_prompt(svp)
-    assert "[Image1]" in prompt
+    assert "@Image1" in prompt
 
 
 def test_render_motion_prompt_includes_por_core() -> None:
@@ -167,6 +167,19 @@ def test_render_motion_prompt_aggregates_forbidden() -> None:
         assert item in prompt
     for item in svp.c3.constraints.motion_forbidden:
         assert item in prompt
+
+
+def test_render_motion_prompt_includes_required_constraints() -> None:
+    svp = _load("shibuya_dusk.json")
+    payload = copy.deepcopy(svp.model_dump())
+    payload["motion_layer"]["constraints"]["required"] = ["REQ_MOTION_UNIQUE"]
+    payload["c3"]["constraints"]["required"] = ["REQ_GLOBAL_UNIQUE"]
+    mutated = SVPVideo.model_validate(payload)
+
+    prompt = render_motion_prompt(mutated)
+    assert "## Required Constraints" in prompt
+    assert "[motion] REQ_MOTION_UNIQUE" in prompt
+    assert "[global] REQ_GLOBAL_UNIQUE" in prompt
 
 
 def test_render_motion_prompt_keeps_continuity_guardrails_positive() -> None:
