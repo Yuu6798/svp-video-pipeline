@@ -1,4 +1,4 @@
-"""Tests for ImageGenerator."""
+"""Tests for GeminiImageBackend."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from svp_pipeline.exceptions import ImageAPIError, ImageRefusalError
-from svp_pipeline.generator.image import ImageGenerator
+from svp_pipeline.generator.image_gemini import GeminiImageBackend
 from svp_pipeline.schema import SVPVideo
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES, build_image_response, build_refusal_response
 
@@ -32,22 +32,23 @@ class DummyClient:
 def test_generate_returns_image_result() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
     result = generator.generate(svp=svp)
 
     assert result.png_bytes == TINY_PNG_BYTES
     assert result.model == "gemini-3-pro-image-preview"
-    assert result.resolution == "2K"
+    assert result.backend == "gemini"
+    assert result.native_size_or_resolution == "2K"
     assert result.aspect_ratio == "16:9"
 
 
 def test_generate_passes_correct_aspect_ratio() -> None:
     svp = _load("action_ninja.json")
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
-    generator.generate(svp=svp, resolution="2K")
+    generator.generate(svp=svp, quality_mode="normal")
 
     config = client.models.generate_content.call_args.kwargs["config"]
     image_config = config.image_config
@@ -62,9 +63,9 @@ def test_generate_passes_correct_aspect_ratio() -> None:
 def test_generate_passes_correct_resolution() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
-    generator.generate(svp=svp, resolution="1K")
+    generator.generate(svp=svp, quality_mode="cheap")
 
     config = client.models.generate_content.call_args.kwargs["config"]
     image_config = config.image_config
@@ -79,8 +80,8 @@ def test_auto_aspect_ratio_fallback() -> None:
     svp_auto = SVPVideo.model_validate(payload)
 
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
-    result = generator.generate(svp=svp_auto, resolution="2K")
+    generator = GeminiImageBackend(client=client)
+    result = generator.generate(svp=svp_auto, quality_mode="normal")
 
     config = client.models.generate_content.call_args.kwargs["config"]
     image_config = config.image_config
@@ -90,23 +91,23 @@ def test_auto_aspect_ratio_fallback() -> None:
         None,
     )
     assert actual == "16:9"
-    assert result.aspect_ratio == "16:9"
+    assert result.aspect_ratio == "auto"
 
 
 def test_cost_calculation() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
-    result = generator.generate(svp=svp, resolution="4K")
+    result = generator.generate(svp=svp, quality_mode="normal")
 
-    assert result.cost_usd == generator.COST_PER_IMAGE_USD["4K"]
+    assert result.cost_usd == generator.COST_PER_IMAGE_USD["2K"]
 
 
 def test_raw_prompt_in_result() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
     result = generator.generate(svp=svp)
 
@@ -116,7 +117,7 @@ def test_raw_prompt_in_result() -> None:
 def test_refusal_raises_image_refusal_error() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_refusal_response("SAFETY"))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
     with pytest.raises(ImageRefusalError):
         generator.generate(svp=svp)
@@ -129,7 +130,7 @@ def test_refusal_raises_image_refusal_error() -> None:
 def test_image_finish_refusal_reasons_raise_image_refusal_error(finish_reason: str) -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_refusal_response(finish_reason))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
     with pytest.raises(ImageRefusalError):
         generator.generate(svp=svp)
@@ -138,7 +139,7 @@ def test_image_finish_refusal_reasons_raise_image_refusal_error(finish_reason: s
 def test_api_error_wrapped() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(error=RuntimeError("upstream failed"))
-    generator = ImageGenerator(client=client)
+    generator = GeminiImageBackend(client=client)
 
     with pytest.raises(ImageAPIError):
         generator.generate(svp=svp)

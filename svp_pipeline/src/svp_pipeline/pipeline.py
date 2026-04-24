@@ -9,7 +9,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .generator.image import ImageGenerator, ImageResolution
+from .generator.image import ImageBackendName, create_image_backend
+from .generator.image_base import ImageBackend
+from .generator.image_gemini import GeminiImageBackend
+from .generator.image_openai import OpenAIImageBackend
 from .generator.planner import Planner, PlannerModel
 from .schema import SVPVideo
 
@@ -40,20 +43,20 @@ class Pipeline:
         self,
         output_dir: Path,
         planner_model: PlannerModel = "claude-opus-4-7",
-        image_model: str = "gemini-3-pro-image-preview",
+        image_backend: ImageBackendName = "gemini",
         cheap_mode: bool = False,
         dry_run: bool = False,
         planner: Planner | None = None,
-        image_generator: ImageGenerator | None = None,
+        image_generator: ImageBackend | None = None,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.planner_model = planner_model
-        self.image_model = image_model
+        self.image_backend_name = image_backend
         self.cheap_mode = cheap_mode
         self.dry_run = dry_run
-        self.image_resolution: ImageResolution = "1K" if cheap_mode else "2K"
+        self.image_quality_mode = "cheap" if cheap_mode else "normal"
 
         self._planner = planner if planner is not None else Planner(model=planner_model)
         self._image_generator = image_generator
@@ -87,35 +90,35 @@ class Pipeline:
 
         image_path: Path | None = None
         if self.dry_run:
-            estimated_image_cost = ImageGenerator.COST_PER_IMAGE_USD[self.image_resolution]
-            resolved_aspect = ImageGenerator.ASPECT_FALLBACK.get(
-                svp.composition_layer.aspect_ratio,
-                svp.composition_layer.aspect_ratio,
-            )
+            dryrun_meta = self._estimate_image_dryrun(svp)
             image_stage = {
                 "status": "skipped_dry_run",
                 "elapsed_sec": 0.0,
-                "estimated_cost_usd": estimated_image_cost,
-                "model": self.image_model,
-                "resolution": self.image_resolution,
-                "aspect_ratio": resolved_aspect,
+                "estimated_cost_usd": dryrun_meta["estimated_cost_usd"],
+                "backend": dryrun_meta["backend"],
+                "model": dryrun_meta["model"],
+                "aspect_ratio": dryrun_meta["aspect_ratio"],
+                "native_size_or_resolution": dryrun_meta["native_size_or_resolution"],
+                "was_aspect_coerced": dryrun_meta["was_aspect_coerced"],
             }
-            total_cost = self.PLANNER_ESTIMATED_COST_USD + estimated_image_cost
+            total_cost = self.PLANNER_ESTIMATED_COST_USD + dryrun_meta["estimated_cost_usd"]
         else:
             generator = self._image_generator
             if generator is None:
-                generator = ImageGenerator(model=self.image_model)
+                generator = create_image_backend(backend=self.image_backend_name)
                 self._image_generator = generator
-            image_result = generator.generate(svp=svp, resolution=self.image_resolution)
+            image_result = generator.generate(svp=svp, quality_mode=self.image_quality_mode)
             image_path = run_dir / "image.png"
             image_path.write_bytes(image_result.png_bytes)
             image_stage = {
                 "status": "ok",
                 "elapsed_sec": image_result.elapsed_sec,
                 "cost_usd": image_result.cost_usd,
+                "backend": image_result.backend,
                 "model": image_result.model,
-                "resolution": image_result.resolution,
                 "aspect_ratio": image_result.aspect_ratio,
+                "native_size_or_resolution": image_result.native_size_or_resolution,
+                "was_aspect_coerced": image_result.was_aspect_coerced,
             }
             total_cost = self.PLANNER_ESTIMATED_COST_USD + image_result.cost_usd
 
@@ -169,3 +172,31 @@ class Pipeline:
             return requested_model
 
         return self.planner_model
+
+    def _estimate_image_dryrun(self, svp: SVPVideo) -> dict[str, Any]:
+        aspect_ratio = svp.composition_layer.aspect_ratio
+        if self.image_backend_name == "gemini":
+            resolution = GeminiImageBackend.QUALITY_TO_RESOLUTION[self.image_quality_mode]
+            return {
+                "estimated_cost_usd": GeminiImageBackend.COST_PER_IMAGE_USD[resolution],
+                "backend": GeminiImageBackend.BACKEND_NAME,
+                "model": GeminiImageBackend.MODEL_ID,
+                "aspect_ratio": aspect_ratio,
+                "native_size_or_resolution": resolution,
+                "was_aspect_coerced": False,
+            }
+
+        if self.image_backend_name == "openai":
+            quality = OpenAIImageBackend.QUALITY_MAP[self.image_quality_mode]
+            size = OpenAIImageBackend.ASPECT_TO_SIZE[aspect_ratio]
+            was_coerced = aspect_ratio not in OpenAIImageBackend._DIRECT_COMPATIBLE_ASPECTS
+            return {
+                "estimated_cost_usd": OpenAIImageBackend.COST_PER_IMAGE_USD[(size, quality)],
+                "backend": OpenAIImageBackend.BACKEND_NAME,
+                "model": OpenAIImageBackend.MODEL_ID,
+                "aspect_ratio": aspect_ratio,
+                "native_size_or_resolution": size,
+                "was_aspect_coerced": was_coerced,
+            }
+
+        raise ValueError(f"Unknown image backend: {self.image_backend_name!r}")

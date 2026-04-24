@@ -13,10 +13,11 @@
 （M5 で執筆）
 
 ## Known Limitations
-- M3 image backend is `gemini-3-pro-image-preview`.
-- OpenAI `gpt-image-2` backend is deferred until organization verification is available.
+- Image backends are `gemini-3-pro-image-preview` and `gpt-image-2` (selectable).
 - `auto` aspect ratio is mapped to `16:9` in M3 because Gemini image API does not accept `auto`.
-- M3 only supports planner -> image. Video stage remains out of scope until M4.
+- `gpt-image-2` supports only 3 concrete sizes (`1024x1024`, `1536x1024`, `1024x1536`);
+  SVP `21:9` / `4:3` / `3:4` are coerced to the nearest supported size.
+- M3.5 still supports planner -> image only. Video stage remains out of scope until M4.
 - JSON-structured prompt sections are preserved to keep the same "JSON Supremacy" behavior observed in prior experiments.
 
 ## Development
@@ -61,8 +62,8 @@ Recommended observation prompts:
   so `gpt-image-2` execution was blocked.
 - Scope impact: `gpt-image-2` forbidden-effect evaluation was removed from M3.
   M3 verifies forbidden behavior on Gemini only.
-- `gpt-image-2` parity checks are deferred to a future milestone after OpenAI
-  org verification is available.
+- In M3.5, OpenAI organization verification completed and `gpt-image-2`
+  backend support was added for parity checks.
 
 ## M3 Forbidden Observation Snapshot (Gemini, 2026-04-23)
 Output directory:
@@ -81,3 +82,34 @@ Notes:
 - This snapshot is qualitative (manual visual inspection), not a scored benchmark.
 - C-group risk items (reverse grip, linear-object handling edge cases, soft-body
   edge cases) are deferred to M4 for re-evaluation.
+
+## Manual OpenAI Verification (M3.5)
+Run after setting API keys:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+
+python -c "
+from pathlib import Path
+from svp_pipeline.pipeline import Pipeline
+
+p = Pipeline(
+    output_dir=Path('./out'),
+    planner_model='claude-haiku-4-5',
+    image_backend='openai',
+)
+result = p.run(
+    '夕暮れの渋谷で少女が傘を畳む',
+    duration=5,
+    no_video=True,
+)
+print(f'Image saved: {result.image_path}')
+print(f'Total cost: ${result.total_cost_usd:.4f}')
+"
+```
+
+Recommended cross-backend comparison prompts (Gemini vs OpenAI):
+1. `shibuya_dusk` (16:9): compare PoR reproduction.
+2. `still_life_macro` (no-human forbidden): compare forbidden compliance.
+3. `action_ninja` (21:9): compare native 21:9 (Gemini) vs coerced 1536x1024 (OpenAI).
