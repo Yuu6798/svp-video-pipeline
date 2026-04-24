@@ -169,6 +169,17 @@ def test_render_motion_prompt_aggregates_forbidden() -> None:
         assert item in prompt
 
 
+def test_render_motion_prompt_keeps_continuity_guardrails_positive() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+
+    assert "## Continuity Guardrails" in prompt
+    assert "Keep PoR core elements visible throughout the timeline." in prompt
+    assert "Keep primary grv anchors inside the frame throughout the timeline." in prompt
+    assert "Avoid: Keep PoR core elements visible throughout the timeline." not in prompt
+    assert "Avoid: Keep primary grv anchors inside the frame throughout the timeline." not in prompt
+
+
 def test_render_motion_prompt_excludes_image_only_layers() -> None:
     svp = _load("shibuya_dusk.json")
     prompt = render_motion_prompt(svp)

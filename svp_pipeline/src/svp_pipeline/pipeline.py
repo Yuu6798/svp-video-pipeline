@@ -104,6 +104,28 @@ class Pipeline:
                 "aspect_ratio": resolved_aspect,
             }
             total_cost += estimated_image_cost
+            if not no_video:
+                estimated_video_cost = VideoGenerator.PRICE_PER_SECOND[
+                    (self.video_tier, self.video_resolution)
+                ] * svp.motion_layer.duration_seconds
+                endpoint = (
+                    VideoGenerator.ENDPOINT_FAST
+                    if self.video_tier == "fast"
+                    else VideoGenerator.ENDPOINT_STANDARD
+                )
+                video_stage = {
+                    "status": "skipped_dry_run",
+                    "elapsed_sec": 0.0,
+                    "estimated_cost_usd": estimated_video_cost,
+                    "endpoint": endpoint,
+                    "tier": self.video_tier,
+                    "resolution": self.video_resolution,
+                    "aspect_ratio": svp.composition_layer.aspect_ratio,
+                    "duration_seconds": svp.motion_layer.duration_seconds,
+                    "fal_request_id": None,
+                    "mp4_url": None,
+                }
+                total_cost += estimated_video_cost
         else:
             generator = self._image_generator
             if generator is None:

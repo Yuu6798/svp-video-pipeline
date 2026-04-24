@@ -233,3 +233,22 @@ def test_video_download_failure_log_records_url(tmp_path: Path) -> None:
     assert log_data["stages"]["video"]["status"] == "download_failed"
     assert log_data["stages"]["video"]["mp4_url"] == "https://mock.fal.media/download-failed.mp4"
     assert log_data["outputs"]["video"] is None
+
+
+def test_dry_run_default_includes_video_estimate(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        dry_run=True,
+        planner=FakePlanner(svp),  # type: ignore[arg-type]
+        image_generator=FakeImageGenerator(),  # type: ignore[arg-type]
+        video_generator=FakeVideoGenerator(),  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("prompt", duration=5)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert log_data["stages"]["image"]["status"] == "skipped_dry_run"
+    assert log_data["stages"]["video"]["status"] == "skipped_dry_run"
+    assert log_data["stages"]["video"]["estimated_cost_usd"] == pytest.approx(1.512)
+    assert result.total_cost_usd == pytest.approx(0.012 + 0.08 + 1.512)

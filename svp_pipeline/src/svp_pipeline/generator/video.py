@@ -170,19 +170,26 @@ class VideoGenerator:
         raise VideoAPIError("seedance reference-to-video call failed")
 
     def _subscribe_with_timeout(self, endpoint: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                fal_client.subscribe,
-                endpoint,
-                arguments=arguments,
-                with_logs=True,
-            )
-            try:
-                result = future.result(timeout=self.TIMEOUT_SEC)
-            except FuturesTimeoutError as exc:
-                raise VideoTimeoutError(
-                    f"seedance request exceeded timeout ({self.TIMEOUT_SEC}s)"
-                ) from exc
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(
+            fal_client.subscribe,
+            endpoint,
+            arguments=arguments,
+            with_logs=True,
+        )
+        try:
+            result = future.result(timeout=self.TIMEOUT_SEC)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise VideoTimeoutError(
+                f"seedance request exceeded timeout ({self.TIMEOUT_SEC}s)"
+            ) from exc
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True, cancel_futures=False)
 
         if not isinstance(result, dict):
             raise VideoAPIError("seedance response is not a dictionary")

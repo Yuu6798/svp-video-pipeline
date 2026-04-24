@@ -342,3 +342,47 @@ def test_max_retries_exceeded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
             output_path=tmp_path / "video.mp4",
         )
     assert subscribe.call_count == 3
+
+
+def test_timeout_path_does_not_wait_for_executor_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeFuture:
+        def __init__(self) -> None:
+            self.cancel_called = False
+
+        def result(self, timeout=None):
+            raise TimeoutError("timeout")
+
+        def cancel(self) -> bool:
+            self.cancel_called = True
+            return True
+
+    class _FakeExecutor:
+        def __init__(self, max_workers: int = 1) -> None:
+            self.max_workers = max_workers
+            self.future = _FakeFuture()
+            self.shutdown_calls: list[tuple[bool, bool]] = []
+
+        def submit(self, *_args, **_kwargs):
+            return self.future
+
+        def shutdown(self, wait: bool, cancel_futures: bool) -> None:
+            self.shutdown_calls.append((wait, cancel_futures))
+
+    holder: dict[str, _FakeExecutor] = {}
+
+    def _executor_factory(max_workers: int = 1):
+        ex = _FakeExecutor(max_workers=max_workers)
+        holder["executor"] = ex
+        return ex
+
+    monkeypatch.setattr("svp_pipeline.generator.video.ThreadPoolExecutor", _executor_factory)
+
+    generator = VideoGenerator(api_key="test")
+    with pytest.raises(VideoTimeoutError):
+        generator._subscribe_with_timeout(endpoint="mock/endpoint", arguments={})
+
+    executor = holder["executor"]
+    assert executor.future.cancel_called is True
+    assert (False, True) in executor.shutdown_calls

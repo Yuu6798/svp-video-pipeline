@@ -87,12 +87,6 @@ def _collect_motion_forbidden(svp: SVPVideo) -> list[str]:
     merged: list[str] = []
     merged.extend(svp.motion_layer.constraints.forbidden)
     merged.extend(svp.c3.constraints.motion_forbidden)
-    merged.extend(
-        [
-            "Keep PoR core elements visible throughout the timeline.",
-            "Keep primary grv anchors inside the frame throughout the timeline.",
-        ]
-    )
     return _dedupe_keep_order(merged)
 
 
@@ -269,6 +263,10 @@ def render_motion_prompt(svp: SVPVideo) -> str:
 
     lines.extend(
         [
+            "",
+            "## Continuity Guardrails",
+            "- Keep PoR core elements visible throughout the timeline.",
+            "- Keep primary grv anchors inside the frame throughout the timeline.",
             "",
             "## Avoid",
             f"Avoid: {avoid_text}",
