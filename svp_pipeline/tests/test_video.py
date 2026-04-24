@@ -20,6 +20,7 @@ from tests.fixtures.mock_fal import (
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
+SYNC_SUBSCRIBE_PATH = "svp_pipeline.generator.video.fal_client.SyncClient.subscribe"
 
 
 def _load(name: str) -> SVPVideo:
@@ -47,7 +48,7 @@ def test_generate_returns_video_result(tmp_path: Path, monkeypatch: pytest.Monke
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch, TINY_MP4_BYTES)
 
     generator = VideoGenerator(tier="standard", api_key="test-fal-key", timeout_mode="thread")
@@ -69,7 +70,7 @@ def test_standard_tier_uses_correct_endpoint(
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator(tier="standard").generate(
@@ -87,7 +88,7 @@ def test_fast_tier_uses_correct_endpoint(tmp_path: Path, monkeypatch: pytest.Mon
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator(tier="fast").generate(
@@ -105,7 +106,7 @@ def test_duration_passed_as_string(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -125,7 +126,7 @@ def test_aspect_ratio_passed_directly(tmp_path: Path, monkeypatch: pytest.Monkey
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -145,7 +146,7 @@ def test_image_url_in_image_urls_list(tmp_path: Path, monkeypatch: pytest.Monkey
 
     patch_fal_upload(monkeypatch, url=image_url)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -165,7 +166,7 @@ def test_generate_audio_always_false(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -183,7 +184,7 @@ def test_resolution_720p_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -201,7 +202,7 @@ def test_resolution_480p_applied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response())
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
     patch_httpx_download(monkeypatch)
 
     _make_generator().generate(
@@ -281,7 +282,7 @@ def test_download_failure_preserves_url(tmp_path: Path, monkeypatch: pytest.Monk
 
     patch_fal_upload(monkeypatch)
     subscribe_mock = MagicMock(return_value=build_successful_subscribe_response(mp4_url=mp4_url))
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.subscribe", subscribe_mock)
+    monkeypatch.setattr(SYNC_SUBSCRIBE_PATH, subscribe_mock)
 
     def _raise_download(*_args, **_kwargs):
         raise httpx.ConnectError("network", request=httpx.Request("GET", mp4_url))

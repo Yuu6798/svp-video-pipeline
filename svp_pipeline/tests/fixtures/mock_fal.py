@@ -40,14 +40,17 @@ def build_api_error_mock() -> MagicMock:
 
 
 def patch_fal_upload(monkeypatch, url: str = "https://storage.fal.ai/mock-image.png") -> None:
-    """Patch fal_client.upload_file in video generator module."""
-    monkeypatch.setattr("svp_pipeline.generator.video.fal_client.upload_file", lambda _path: url)
+    """Patch SyncClient.upload_file used by VideoGenerator."""
+    monkeypatch.setattr(
+        "svp_pipeline.generator.video.fal_client.SyncClient.upload_file",
+        lambda _self, _path: url,
+    )
 
 
 def patch_fal_subscribe(monkeypatch, response: dict) -> None:
-    """Patch fal_client.subscribe in video generator module."""
+    """Patch SyncClient.subscribe used by VideoGenerator."""
     monkeypatch.setattr(
-        "svp_pipeline.generator.video.fal_client.subscribe",
+        "svp_pipeline.generator.video.fal_client.SyncClient.subscribe",
         lambda *_args, **_kwargs: response,
     )
 

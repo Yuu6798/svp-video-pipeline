@@ -202,6 +202,25 @@ def test_no_video_false_default(tmp_path: Path) -> None:
     assert len(fake_video.calls) == 1
 
 
+def test_missing_fal_key_fails_before_image_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    svp = _load("shibuya_dusk.json")
+    fake_image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=FakePlanner(svp),  # type: ignore[arg-type]
+        image_generator=fake_image,  # type: ignore[arg-type]
+    )
+    monkeypatch.delenv("FAL_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="FAL_KEY is required"):
+        pipeline.run("prompt", duration=5)
+
+    assert len(fake_image.calls) == 0
+
+
 def test_video_download_failure_preserves_others(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
     pipeline = Pipeline(

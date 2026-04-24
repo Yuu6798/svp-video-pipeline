@@ -88,6 +88,7 @@ class Pipeline:
         image_path: Path | None = None
         video_path: Path | None = None
         video_stage: dict[str, Any] | None = None
+        video_generator: VideoGenerator | None = None
         total_cost = self.PLANNER_ESTIMATED_COST_USD
         if self.dry_run:
             estimated_image_cost = ImageGenerator.COST_PER_IMAGE_USD[self.image_resolution]
@@ -127,6 +128,12 @@ class Pipeline:
                 }
                 total_cost += estimated_video_cost
         else:
+            if not no_video:
+                video_generator = self._video_generator
+                if video_generator is None:
+                    video_generator = VideoGenerator(tier=self.video_tier)
+                    self._video_generator = video_generator
+
             generator = self._image_generator
             if generator is None:
                 generator = ImageGenerator(model=self.image_model)
@@ -145,10 +152,7 @@ class Pipeline:
             total_cost += image_result.cost_usd
 
             if not no_video:
-                video_generator = self._video_generator
-                if video_generator is None:
-                    video_generator = VideoGenerator(tier=self.video_tier)
-                    self._video_generator = video_generator
+                assert video_generator is not None
 
                 endpoint = (
                     VideoGenerator.ENDPOINT_FAST

@@ -27,11 +27,13 @@ TimeoutMode = Literal["process", "thread"]
 def _subscribe_worker(
     endpoint: str,
     arguments: dict[str, Any],
+    api_key: str,
     result_queue: Queue,
 ) -> None:
     """Run fal subscribe in a child process and return payload via queue."""
     try:
-        result = fal_client.subscribe(
+        client = fal_client.SyncClient(key=api_key)
+        result = client.subscribe(
             endpoint,
             arguments=arguments,
             with_logs=True,
@@ -100,7 +102,8 @@ class VideoGenerator:
         resolved_key = api_key or os.getenv("FAL_KEY")
         if not resolved_key:
             raise ValueError("FAL_KEY is required for VideoGenerator")
-        os.environ["FAL_KEY"] = resolved_key
+        self._api_key = resolved_key
+        self._fal_client = fal_client.SyncClient(key=resolved_key)
 
     def generate(
         self,
@@ -153,7 +156,7 @@ class VideoGenerator:
 
     def _upload_image(self, image_path: Path) -> str:
         try:
-            uploaded = fal_client.upload_file(str(image_path))
+            uploaded = self._fal_client.upload_file(str(image_path))
         except Exception as exc:  # noqa: BLE001
             raise VideoAPIError("failed to upload reference image to fal.ai") from exc
 
@@ -217,7 +220,7 @@ class VideoGenerator:
         """Timeout mode used in tests where monkeypatching fal_client is required."""
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(
-            fal_client.subscribe,
+            self._fal_client.subscribe,
             endpoint,
             arguments=arguments,
             with_logs=True,
@@ -249,7 +252,7 @@ class VideoGenerator:
         result_queue: Queue = Queue(maxsize=1)
         process = Process(
             target=_subscribe_worker,
-            args=(endpoint, arguments, result_queue),
+            args=(endpoint, arguments, self._api_key, result_queue),
             daemon=True,
         )
         process.start()
