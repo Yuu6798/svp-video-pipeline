@@ -6,7 +6,7 @@ import copy
 from pathlib import Path
 
 from svp_pipeline.schema import SVPVideo
-from svp_pipeline.utils.prompt_render import render_image_prompt
+from svp_pipeline.utils.prompt_render import render_image_prompt, render_motion_prompt
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
 
@@ -117,3 +117,102 @@ def test_render_for_all_three_samples() -> None:
         prompt = render_image_prompt(svp)
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+
+def test_render_motion_prompt_includes_image_reference() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+    assert "@Image1" in prompt
+
+
+def test_render_motion_prompt_includes_por_core() -> None:
+    svp = _load("action_ninja.json")
+    prompt = render_motion_prompt(svp)
+    for item in svp.por_core:
+        assert item in prompt
+
+
+def test_render_motion_prompt_includes_grv_anchor() -> None:
+    svp = _load("still_life_macro.json")
+    prompt = render_motion_prompt(svp)
+    for item in svp.grv_anchor:
+        assert item in prompt
+
+
+def test_render_motion_prompt_includes_duration() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+    assert str(svp.motion_layer.duration_seconds) in prompt
+
+
+def test_render_motion_prompt_includes_camera_movement() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+    assert svp.motion_layer.camera_movement.type in prompt
+    assert svp.motion_layer.camera_movement.speed in prompt
+
+
+def test_render_motion_prompt_includes_temporal_anchors() -> None:
+    svp = _load("action_ninja.json")
+    prompt = render_motion_prompt(svp)
+    for anchor in svp.motion_layer.temporal_anchors:
+        assert anchor.time_range in prompt
+        assert anchor.description in prompt
+
+
+def test_render_motion_prompt_aggregates_forbidden() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+    for item in svp.motion_layer.constraints.forbidden:
+        assert item in prompt
+    for item in svp.c3.constraints.forbidden:
+        assert item in prompt
+    for item in svp.c3.constraints.motion_forbidden:
+        assert item in prompt
+
+
+def test_render_motion_prompt_includes_required_constraints() -> None:
+    svp = _load("shibuya_dusk.json")
+    payload = copy.deepcopy(svp.model_dump())
+    payload["motion_layer"]["constraints"]["required"] = ["REQ_MOTION_UNIQUE"]
+    payload["c3"]["constraints"]["required"] = ["REQ_GLOBAL_UNIQUE"]
+    mutated = SVPVideo.model_validate(payload)
+
+    prompt = render_motion_prompt(mutated)
+    assert "## Required Constraints" in prompt
+    assert "[motion] REQ_MOTION_UNIQUE" in prompt
+    assert "[global] REQ_GLOBAL_UNIQUE" in prompt
+
+
+def test_render_motion_prompt_keeps_continuity_guardrails_positive() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+
+    assert "## Continuity Guardrails" in prompt
+    assert "Keep PoR core elements visible throughout the timeline." in prompt
+    assert "Keep primary grv anchors inside the frame throughout the timeline." in prompt
+    assert "Avoid: Keep PoR core elements visible throughout the timeline." not in prompt
+    assert "Avoid: Keep primary grv anchors inside the frame throughout the timeline." not in prompt
+
+
+def test_render_motion_prompt_excludes_image_only_layers() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = render_motion_prompt(svp)
+    for feature in svp.face_layer.distinctive_features:
+        assert feature not in prompt
+    assert svp.style_family in prompt
+
+
+def test_render_motion_prompt_for_all_samples() -> None:
+    for name in ("shibuya_dusk.json", "still_life_macro.json", "action_ninja.json"):
+        svp = _load(name)
+        prompt = render_motion_prompt(svp)
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0
+
+
+def test_render_motion_prompt_output_is_deterministic() -> None:
+    svp = _load("shibuya_dusk.json")
+    first = render_motion_prompt(svp)
+    second = render_motion_prompt(svp)
+    assert first == second

@@ -83,6 +83,28 @@ def _collect_required(svp: SVPVideo) -> list[tuple[str, str]]:
     return items
 
 
+def _collect_motion_forbidden(svp: SVPVideo) -> list[str]:
+    merged: list[str] = []
+    merged.extend(svp.motion_layer.constraints.forbidden)
+    merged.extend(svp.c3.constraints.forbidden)
+    merged.extend(svp.c3.constraints.motion_forbidden)
+    return _dedupe_keep_order(merged)
+
+
+def _collect_motion_required(svp: SVPVideo) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    layer_required = [
+        ("motion", svp.motion_layer.constraints.required),
+        ("global", svp.c3.constraints.required),
+    ]
+    for layer, required_items in layer_required:
+        for item in required_items:
+            normalized = item.strip()
+            if normalized:
+                items.append((layer, normalized))
+    return items
+
+
 def render_image_prompt(svp: SVPVideo) -> str:
     """Render image-layer prompt text from SVPVideo.
 
@@ -157,6 +179,121 @@ def render_image_prompt(svp: SVPVideo) -> str:
 
     lines.extend(
         [
+            "",
+            "## Avoid",
+            f"Avoid: {avoid_text}",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+def render_motion_prompt(svp: SVPVideo) -> str:
+    """Render motion-layer prompt text from SVPVideo for Seedance r2v."""
+
+    avoid_items = _collect_motion_forbidden(svp)
+    required_items = _collect_motion_required(svp)
+    avoid_text = ", ".join(avoid_items) if avoid_items else "None"
+
+    lines: list[str] = [
+        "# Video Generation Brief",
+        "",
+        "## Reference",
+        (
+            "Use @Image1 as the primary visual reference. Preserve subject identity, "
+            "composition, lighting, and style continuity through the full clip."
+        ),
+        "",
+        "## Essence to Preserve (PoR)",
+        "Throughout the video, keep these semantic core elements visible:",
+    ]
+    lines.extend(f"- {item}" for item in svp.por_core)
+
+    lines.extend(
+        [
+            "",
+            "## Visual Anchors (grv)",
+            "The camera focus should stay on:",
+        ]
+    )
+    lines.extend(f"- {item}" for item in svp.grv_anchor)
+
+    camera = svp.motion_layer.camera_movement
+    lines.extend(
+        [
+            "",
+            "## Camera Movement",
+            f"- Type: {camera.type}",
+            f"- Speed: {camera.speed}",
+        ]
+    )
+
+    lines.extend(
+        [
+            "",
+            "## Subject Motion",
+        ]
+    )
+    if svp.motion_layer.subject_motion:
+        for movement in svp.motion_layer.subject_motion:
+            lines.extend(
+                [
+                    f"- Subject: {movement.subject}",
+                    f"  Action: {movement.action}",
+                    f"  Intensity: {movement.intensity}",
+                ]
+            )
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Timeline",
+        ]
+    )
+    if svp.motion_layer.temporal_anchors:
+        lines.extend(
+            f"- {anchor.time_range}: {anchor.description}"
+            for anchor in svp.motion_layer.temporal_anchors
+        )
+    else:
+        lines.append("- None")
+
+    style_pack = svp.style_pack or "None"
+    lines.extend(
+        [
+            "",
+            "## Duration",
+            f"{svp.motion_layer.duration_seconds} seconds",
+            "",
+            "## Style Continuity",
+            f"Maintain the style defined by: {svp.style_family} / {style_pack}",
+            "",
+            "## Consistency Rules",
+        ]
+    )
+    if svp.c3.consistency:
+        lines.extend(f"- {item}" for item in svp.c3.consistency)
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Required Constraints",
+        ]
+    )
+    if required_items:
+        lines.extend(f"- [{layer}] {item}" for layer, item in required_items)
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Continuity Guardrails",
+            "- Keep PoR core elements visible throughout the timeline.",
+            "- Keep primary grv anchors inside the frame throughout the timeline.",
             "",
             "## Avoid",
             f"Avoid: {avoid_text}",
