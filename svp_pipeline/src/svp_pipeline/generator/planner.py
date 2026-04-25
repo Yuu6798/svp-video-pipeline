@@ -394,21 +394,35 @@ class Planner:
         if not risk_flags:
             return svp
 
+        single_subject_intent = _prompt_indicates_single_subject(user_prompt)
+        detailed_background = _detect_detailed_background_request(user_prompt)
+        background_forbidden = _background_forbidden_items(risk_flags, detailed_background)
+
         depth_layers = _append_unique(
             list(svp.composition_layer.depth_layers),
-            _background_depth_layers(risk_flags),
+            _background_depth_layers(
+                risk_flags,
+                single_subject_intent=single_subject_intent,
+                detailed_background=detailed_background,
+            ),
         )
+        composition_required_items = [
+            "background acts as smooth lighting support, not the subject",
+            "character detail has priority over background detail",
+        ]
+        if detailed_background:
+            composition_required_items.append(
+                "background detail remains organized and subordinate to the PoR"
+            )
+        else:
+            composition_required_items.append("distant background uses sparse simplified shapes")
         composition_required = _append_unique(
             list(svp.composition_layer.constraints.required),
-            [
-                "background acts as smooth lighting support, not the subject",
-                "character detail has priority over background detail",
-                "distant background uses sparse simplified shapes",
-            ],
+            composition_required_items,
         )
         composition_forbidden = _append_unique(
             list(svp.composition_layer.constraints.forbidden),
-            _background_forbidden_items(risk_flags),
+            background_forbidden,
         )
         composition_constraints = svp.composition_layer.constraints.model_copy(
             update={
@@ -423,17 +437,23 @@ class Planner:
             }
         )
 
+        style_required_items = [
+            "background uses broad smooth shapes and controlled gradients",
+            "background micro-line density stays low",
+        ]
+        if "dense_city" in risk_flags:
+            style_required_items.append(
+                "neon atmosphere is carried by large clean light blocks"
+            )
+        if detailed_background:
+            style_required_items.append("requested city detail is grouped into clean blocks")
         style_required = _append_unique(
             list(svp.style_layer.constraints.required),
-            [
-                "background uses broad smooth shapes and controlled gradients",
-                "background micro-line density stays low",
-                "neon atmosphere is carried by large clean light blocks",
-            ],
+            style_required_items,
         )
         style_forbidden = _append_unique(
             list(svp.style_layer.constraints.forbidden),
-            _background_forbidden_items(risk_flags),
+            background_forbidden,
         )
         style_constraints = svp.style_layer.constraints.model_copy(
             update={
@@ -475,20 +495,31 @@ class Planner:
                 }
             )
 
-        global_required = _append_unique(
-            list(svp.c3.constraints.required),
-            [
+        if detailed_background:
+            global_required_items = [
+                (
+                    "Priority rule: character detail > requested background organization > "
+                    "lighting atmosphere > wet reflections"
+                ),
+                "background detail remains readable only where requested",
+                "background remains subordinate to the PoR",
+            ]
+        else:
+            global_required_items = [
                 (
                     "Priority rule: character detail > lighting atmosphere > "
                     "wet reflections > background simplicity"
                 ),
                 "background simplicity has higher priority than background detail",
                 "background remains a clean support field for the PoR",
-            ],
+            ]
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            global_required_items,
         )
         global_forbidden = _append_unique(
             list(svp.c3.constraints.forbidden),
-            _background_forbidden_items(risk_flags),
+            background_forbidden,
         )
         global_constraints = svp.c3.constraints.model_copy(
             update={
@@ -519,17 +550,11 @@ class Planner:
             update={
                 "do_not_copy_from_reference": _append_unique(
                     list(svp.reference_usage_policy.do_not_copy_from_reference),
-                    _background_forbidden_items(risk_flags),
+                    background_forbidden,
                 ),
                 "background_quality_rules": _append_unique(
                     list(svp.reference_usage_policy.background_quality_rules),
-                    [
-                        "background acts as smooth lighting support",
-                        "broad smooth wet reflection bands",
-                        "sparse soft neon blocks",
-                        "simplified dark building silhouettes",
-                        "background detail stays subordinate to character detail",
-                    ],
+                    _background_quality_rules(detailed_background),
                 ),
                 "object_instance_rules": _append_unique(
                     list(svp.reference_usage_policy.object_instance_rules),
@@ -564,6 +589,8 @@ class Planner:
     def _apply_object_contact_audit(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
         object_flags = _detect_object_contact_risk(user_prompt)
         if not {"umbrella", "katana"}.issubset(object_flags):
+            return svp
+        if _detect_drawn_weapon_request(user_prompt):
             return svp
 
         pose_required = _append_unique(
@@ -780,24 +807,48 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
 
 
 def _detect_background_noise_risk(user_prompt: str) -> set[str]:
-    lower_prompt = user_prompt.lower()
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     flags: set[str] = set()
 
-    if re.search(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
+    if _contains_unnegated(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
         flags.add("dense_city")
-    if re.search(r"\b(?:rain|rainy|wet|reflection|reflections|pavement)\b", lower_prompt):
+    if _contains_unnegated(
+        r"\b(?:rain|rainy|wet|reflection|reflections|pavement)\b",
+        lower_prompt,
+    ):
         flags.add("wet_reflection")
-    if re.search(r"\b(?:glass|transparent|umbrella)\b", lower_prompt):
+    if _contains_unnegated(r"\b(?:glass|transparent|umbrella)\b", lower_prompt):
         flags.add("transparent_object")
-    if re.search(r"\b(?:katana|sword|blade|gun|weapon)\b", lower_prompt):
+    if _contains_unnegated(r"\b(?:katana|sword|blade|gun|weapon)\b", lower_prompt):
         flags.add("weapon")
-    if re.search(
+    if _contains_unnegated(
         r"\b(?:noise|noisy|grain|gritty|speckle|speckled|busy background)\b",
         lower_prompt,
     ):
         flags.add("explicit_noise_control")
 
     return flags
+
+
+def _detect_detailed_background_request(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    detail_patterns = [
+        r"\b(?:detailed|highly detailed|intricate|dense|busy)\s+"
+        r"(?:cityscape|background|neon signage|signage|city|street)\b",
+        r"\b(?:readable|legible)\s+(?:neon\s+)?(?:signage|signs|text)\b",
+        r"\b(?:many|dense|crowded)\s+(?:neon\s+)?(?:signs|signage)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in detail_patterns)
+
+
+def _detect_drawn_weapon_request(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    drawn_patterns = [
+        r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
+        r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
+        r"\b(?:holding|wielding|gripping)\s+(?:a\s+)?(?:katana|sword|blade)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in drawn_patterns)
 
 
 def _detect_object_contact_risk(user_prompt: str) -> set[str]:
@@ -813,29 +864,44 @@ def _detect_object_contact_risk(user_prompt: str) -> set[str]:
     return flags
 
 
-def _background_depth_layers(risk_flags: set[str]) -> list[str]:
-    layers = [
-        "foreground: single character in sharp detail",
-        "background: simplified dark silhouettes with sparse soft light blocks",
-    ]
+def _background_depth_layers(
+    risk_flags: set[str],
+    *,
+    single_subject_intent: bool,
+    detailed_background: bool,
+) -> list[str]:
+    foreground = (
+        "foreground: single character in sharp detail"
+        if single_subject_intent
+        else "foreground: requested subject(s) in sharp detail"
+    )
+    background = (
+        "background: organized requested city detail kept subordinate to the PoR"
+        if detailed_background
+        else "background: simplified dark silhouettes with sparse soft light blocks"
+    )
+    layers = [foreground, background]
     if "wet_reflection" in risk_flags:
         layers.append("midground: broad smooth wet reflection bands")
-    if "dense_city" in risk_flags:
+    if "dense_city" in risk_flags and not detailed_background:
         layers.append("background: sparse neon blocks instead of dense signage")
     if "transparent_object" in risk_flags:
         layers.append("transparent objects stay clean and do not multiply background detail")
     return layers
 
 
-def _background_forbidden_items(risk_flags: set[str]) -> list[str]:
+def _background_forbidden_items(
+    risk_flags: set[str],
+    detailed_background: bool = False,
+) -> list[str]:
     items = [
-        "dense signage",
-        "tiny readable text",
         "speckled light noise",
         "gritty background texture",
         "scratch-like background artifacts",
         "background silhouettes resembling the character",
     ]
+    if not detailed_background:
+        items.extend(["dense signage", "tiny readable text"])
     if "wet_reflection" in risk_flags:
         items.extend(
             [
@@ -857,8 +923,24 @@ def _background_forbidden_items(risk_flags: set[str]) -> list[str]:
                 "duplicated umbrella ribs",
                 "transparent object filled with noisy background clutter",
             ]
-        )
+            )
     return items
+
+
+def _background_quality_rules(detailed_background: bool) -> list[str]:
+    if detailed_background:
+        return [
+            "background detail remains organized and subordinate to character detail",
+            "readable signs appear only where explicitly requested",
+            "background micro-detail is grouped into clean blocks",
+        ]
+    return [
+        "background acts as smooth lighting support",
+        "broad smooth wet reflection bands",
+        "sparse soft neon blocks",
+        "simplified dark building silhouettes",
+        "background detail stays subordinate to character detail",
+    ]
 
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:
