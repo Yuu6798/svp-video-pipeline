@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import mimetypes
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ DEFAULT_CONFIG_DIR = Path.home() / ".config" / "svp-pipeline"
 DEFAULT_CREDENTIALS_PATH = DEFAULT_CONFIG_DIR / "google-credentials.json"
 DEFAULT_TOKEN_PATH = DEFAULT_CONFIG_DIR / "google-token.json"
 DEFAULT_DRIVE_ROOT = "SVP Archive"
+RUN_ID_RE = re.compile(r"^(?P<timestamp>\d{8}-\d{6})(?:-\d{2})?$")
 
 UPLOAD_ARTIFACTS: dict[str, str] = {
     "image": "image.png",
@@ -229,13 +231,26 @@ def archive_run(
 
 
 def run_id_to_date(run_id: str) -> str:
-    """Convert `YYYYMMDD-HHMMSS` run id to `YYYY-MM-DD`."""
+    """Convert a pipeline run directory name to `YYYY-MM-DD`.
 
+    The pipeline may append `-NN` when multiple runs start in the same second,
+    for example `20260425-140453-01`.
+    """
+
+    match = RUN_ID_RE.fullmatch(run_id)
+    if not match:
+        raise ValueError(
+            f"Invalid run directory name {run_id!r}; expected YYYYMMDD-HHMMSS "
+            "or YYYYMMDD-HHMMSS-NN."
+        )
     try:
-        return dt.datetime.strptime(run_id, "%Y%m%d-%H%M%S").date().isoformat()
+        return dt.datetime.strptime(
+            match.group("timestamp"),
+            "%Y%m%d-%H%M%S",
+        ).date().isoformat()
     except ValueError as exc:
         raise ValueError(
-            f"Invalid run directory name {run_id!r}; expected YYYYMMDD-HHMMSS."
+            f"Invalid run directory date in {run_id!r}; expected a real calendar date."
         ) from exc
 
 

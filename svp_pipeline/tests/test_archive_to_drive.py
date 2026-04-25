@@ -21,10 +21,11 @@ from tests.fixtures.mock_drive import (
 def _make_run_dir(
     tmp_path: Path,
     *,
+    run_id: str = "20260425-140453",
     artifacts: tuple[str, ...] = ("image.png", "video.mp4"),
     drive_urls: dict[str, str] | None = None,
 ) -> Path:
-    run_dir = tmp_path / "20260425-140453"
+    run_dir = tmp_path / run_id
     run_dir.mkdir()
     for filename in artifacts:
         (run_dir / filename).write_bytes(b"data")
@@ -101,6 +102,15 @@ def test_filter_all_uploaded(tmp_path: Path) -> None:
 
 def test_run_id_date_extraction() -> None:
     assert archive_mod.run_id_to_date("20260425-140453") == "2026-04-25"
+
+
+def test_run_id_date_extraction_accepts_collision_suffix() -> None:
+    assert archive_mod.run_id_to_date("20260425-140453-01") == "2026-04-25"
+
+
+def test_run_id_date_extraction_rejects_invalid_suffix() -> None:
+    with pytest.raises(ValueError, match="YYYYMMDD-HHMMSS-NN"):
+        archive_mod.run_id_to_date("20260425-140453-copy")
 
 
 def test_creates_new_folder_tree() -> None:
@@ -263,6 +273,20 @@ def test_dry_run_does_not_upload_or_modify_log(
 
     assert result.uploaded_files == {}
     assert (run_dir / "log.json").read_text(encoding="utf-8") == original
+    auth.assert_not_called()
+
+
+def test_dry_run_accepts_suffixed_pipeline_run_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = _make_run_dir(tmp_path, run_id="20260425-140453-01")
+    auth = MagicMock()
+    monkeypatch.setattr(archive_mod, "authenticate", auth)
+
+    result = archive_mod.archive_run(run_dir, dry_run=True)
+
+    assert result.drive_folder_url == "SVP Archive/by-date/2026-04-25/20260425-140453-01"
     auth.assert_not_called()
 
 
