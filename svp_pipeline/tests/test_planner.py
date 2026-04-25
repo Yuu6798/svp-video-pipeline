@@ -251,6 +251,21 @@ def test_character_lock_ignores_trailing_english_negated_traits() -> None:
     assert "katana" not in svp.c3.evaluation_criteria.hit_list
 
 
+def test_character_lock_does_not_extract_red_eyes_from_eyeshadow() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with silver-gray high ponytail and red eyeshadow"
+    )
+
+    assert "silver-gray high ponytail" in svp.identity_locks
+    assert "red eyes" not in svp.identity_locks
+    assert "red eyeshadow" not in svp.identity_locks
+    assert "red eyes" not in svp.face_layer.constraints.required
+    assert "red eyes" not in svp.c3.evaluation_criteria.hit_list
+
+
 def test_character_lock_ignores_negated_japanese_identity_traits() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
