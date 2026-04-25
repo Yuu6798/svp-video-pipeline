@@ -56,6 +56,21 @@ svp-video "朝の窓辺の白バラ" --cheap
 # OpenAI image backend
 svp-video "朝の窓辺の白バラ" --image-backend openai --cheap
 
+# Optional character/style reference image
+svp-video "cyberpunk rain city, silver ponytail woman with red eyes" \
+  --reference-image ./refs/character.png \
+  --reference-crop 1 \
+  --image-backend openai \
+  --cheap
+
+# Experimental split character/background generation before video
+svp-video "cyberpunk rain city, silver ponytail woman with red eyes" \
+  --image-backend openai \
+  --reference-image ./refs/character_sheet.jpg \
+  --reference-crop 1 \
+  --separate-character-bg \
+  --cheap
+
 # SVP only
 svp-video "アクションシーン" --dry-run
 
@@ -75,6 +90,10 @@ svp-video "雨の夜の路地" --verbose
 | `--output PATH` | Output directory | `./out` |
 | `--planner-model TEXT` | `claude-opus-4-7` or `claude-haiku-4-5` | `claude-opus-4-7` |
 | `--image-backend TEXT` | `gemini` or `openai` | `gemini` |
+| `--reference-image PATH` | Optional image reference for image generation | Off |
+| `--reference-crop 1-9` | Crop a 3x3 reference sheet to one panel | Off |
+| `--separate-character-bg` | OpenAI-only experimental route: generate character/background separately, then composite | Off |
+| `--character-lock` / `--no-character-lock` | Preserve literal character traits in SVP planning | On |
 | `--cheap` | Low-cost image/video settings | Off |
 | `--dry-run` | Generate SVP only, with estimated downstream cost | Off |
 | `--no-video` | Generate SVP + image, skip video | Off |
@@ -119,6 +138,18 @@ MP4 video
 The image prompt uses the composition, face, style, and pose layers. The motion
 prompt uses `motion_layer`, `por_core`, `grv_anchor`, and the motion-specific
 constraints, while referring to the generated image as `@Image1`.
+When `--reference-image` is provided, the image backend uses that file as an
+additional visual reference; SVP text remains the primary semantic control.
+`--reference-crop` is intended for 3x3 character sheets. It avoids passing the
+entire collage/grid to the image model, which can otherwise reproduce duplicate
+characters or panel layouts.
+Reference images are treated as character/style references only: the prompt tells
+the image backend not to copy reference backgrounds, panel layouts, duplicate
+poses, weapon trails, compression artifacts, or texture noise.
+`--separate-character-bg` goes further by generating a green-screen character
+plate and a background plate separately, compositing them into `image.png`, and
+then passing that composite to Seedance. It also saves `character_green.png`,
+`background_clean.png`, and `composite.png` for inspection.
 
 ## Known Limitations
 
@@ -129,6 +160,14 @@ constraints, while referring to the generated image as `@Image1`.
   resolved to `16:9`.
 - OpenAI `gpt-image-2` supports only three native sizes plus `auto`; `21:9` and
   `4:3` are rounded to the nearest landscape size.
+- Reference images improve character/style reproducibility but do not guarantee
+  pixel-level identity preservation. Keep critical traits in the text prompt and
+  SVP forbidden constraints as well.
+- Character sheets should be cropped to a single panel with `--reference-crop`;
+  passing an entire grid can cause duplicate background figures or collage-like
+  layouts.
+- `--separate-character-bg` reduces reference-background bleed, but the current
+  chroma-key compositing can still leave edge artifacts or a mild composited look.
 - C-group visual risks such as reversed hands, thin linear objects, and
   soft-body deformation still require manual observation.
 - The pipeline does not yet support batch mode, existing SVP JSON input, Web UI,

@@ -113,6 +113,35 @@ def test_raw_prompt_in_result() -> None:
     assert svp.por_identity in result.raw_prompt
 
 
+def test_generate_with_reference_image_passes_multimodal_contents(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    generator = ImageGenerator(client=client)
+
+    generator.generate(svp=svp, reference_image_path=reference)
+
+    contents = client.models.generate_content.call_args.kwargs["contents"]
+    assert isinstance(contents, list)
+    assert contents[0].startswith("# Image Generation Brief")
+    assert "Reference Image Usage Policy" in contents[0]
+    assert "Do not copy these elements from the reference image" in contents[0]
+    inline_part = contents[1]
+    assert inline_part.inline_data.data == TINY_PNG_BYTES
+
+
+def test_reference_image_read_error_raises_value_error(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    generator = ImageGenerator(client=client)
+
+    with pytest.raises(ValueError, match="failed to read reference image"):
+        generator.generate(svp=svp, reference_image_path=tmp_path)
+
+    client.models.generate_content.assert_not_called()
+
+
 def test_refusal_raises_image_refusal_error() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_refusal_response("SAFETY"))

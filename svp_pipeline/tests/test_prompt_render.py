@@ -6,7 +6,11 @@ import copy
 from pathlib import Path
 
 from svp_pipeline.schema import SVPVideo
-from svp_pipeline.utils.prompt_render import render_image_prompt, render_motion_prompt
+from svp_pipeline.utils.prompt_render import (
+    append_reference_usage_policy,
+    render_image_prompt,
+    render_motion_prompt,
+)
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
 
@@ -117,6 +121,20 @@ def test_render_for_all_three_samples() -> None:
         prompt = render_image_prompt(svp)
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+
+def test_append_reference_usage_policy_separates_identity_from_background() -> None:
+    svp = _load("shibuya_dusk.json")
+    prompt = append_reference_usage_policy(render_image_prompt(svp), svp)
+
+    assert "Reference Image Usage Policy" in prompt
+    assert "character identity" in prompt
+    assert "Do not copy these elements from the reference image" in prompt
+    assert "background" in prompt
+    assert "Scene/background transfer strength: low" in prompt
+    assert "Object instance rules" in prompt
+    assert "Background quality rules" in prompt
+    assert "no weapon-like silhouettes in the background" in prompt
 
 
 def test_render_motion_prompt_includes_image_reference() -> None:

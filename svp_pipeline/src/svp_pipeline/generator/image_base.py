@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -34,6 +35,7 @@ class ImageBackend(Protocol):
         self,
         svp: object,
         quality_mode: str = "normal",
+        reference_image_path: Path | None = None,
     ) -> ImageResult:
         """Generate one image from SVP input."""
         ...

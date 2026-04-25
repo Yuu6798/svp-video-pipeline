@@ -134,10 +134,90 @@ class GlobalConstraints(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EvaluationCriteria(BaseModel):
+    """Human-facing preservation criteria carried through generation logs/prompts."""
+
+    hit_list: list[str] = Field(default_factory=list)
+    por_similarity_target: float = Field(default=0.95, ge=0.0, le=1.0)
+    delta_e_target: str = "0.03-0.06"
+    critical_fail_conditions: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class C3(BaseModel):
     context: str
     constraints: GlobalConstraints
     consistency: list[str] = Field(default_factory=list)
+    evaluation_criteria: EvaluationCriteria = Field(default_factory=EvaluationCriteria)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RoleVisualCue(BaseModel):
+    """Visual role cues borrowed from the canonical illustration SVP template."""
+
+    role: str | None = None
+    visual_elements: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VariationPolicy(BaseModel):
+    """Allowed variation range for identity-preserving generation."""
+
+    camera_offset_variation: str = "small"
+    clothing_variation: str = "small"
+    expression_range: str = "minimal"
+    pose_variation: str = "minimal"
+    background_structure_variation: str = "minimal"
+    color_variation: str = "small"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReferenceUsagePolicy(BaseModel):
+    """How an optional reference image should and should not influence generation."""
+
+    use_reference_for: list[str] = Field(
+        default_factory=lambda: [
+            "character identity",
+            "hair color and hairstyle",
+            "eye color",
+            "outfit silhouette and pattern",
+            "overall character color palette",
+        ]
+    )
+    do_not_copy_from_reference: list[str] = Field(
+        default_factory=lambda: [
+            "background",
+            "panel layout",
+            "number labels",
+            "duplicate character poses",
+            "extra swords or weapon trails",
+            "compression artifacts",
+            "texture noise",
+        ]
+    )
+    background_source: str = "SVP prompt, not reference image"
+    identity_strength: Literal["low", "medium", "high"] = "high"
+    scene_transfer_strength: Literal["low", "medium", "high"] = "low"
+    object_instance_rules: list[str] = Field(
+        default_factory=lambda: [
+            "main weapon or prop count must match the prompt",
+            "main weapon or prop must stay attached to the character",
+            "no weapon-like silhouettes in the background",
+        ]
+    )
+    background_quality_rules: list[str] = Field(
+        default_factory=lambda: [
+            "clean cinematic background",
+            "smooth distant background details",
+            "reduced distant micro-line density",
+            "no scratch-like line artifacts",
+            "no compression-like speckles",
+        ]
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -161,7 +241,21 @@ class SVPVideo(BaseModel):
     por_identity: str = Field(min_length=10, max_length=500)
     por_core: list[str] = Field(min_length=3, max_length=6)
     grv_anchor: list[str] = Field(min_length=2, max_length=4)
+    identity_locks: list[str] = Field(default_factory=list)
     de_profile: DEProfile
+
+    role_visual_cue: RoleVisualCue = Field(default_factory=RoleVisualCue)
+    variation_policy: VariationPolicy = Field(default_factory=VariationPolicy)
+    reference_usage_policy: ReferenceUsagePolicy = Field(default_factory=ReferenceUsagePolicy)
+    layer_priority: list[str] = Field(
+        default_factory=lambda: [
+            "composition_layer",
+            "face_layer",
+            "style_layer",
+            "pose_layer",
+            "motion_layer",
+        ]
+    )
 
     composition_layer: CompositionLayer
     face_layer: FaceLayer

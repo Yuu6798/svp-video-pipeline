@@ -47,7 +47,7 @@ def _version_callback(value: bool) -> None:
 
 @app.command()
 def main(
-    prompt: str = typer.Argument(..., help="Video generation prompt."),
+    prompt: list[str] = typer.Argument(..., help="Video generation prompt."),
     duration: int = typer.Option(5, "--duration", min=4, max=15, help="Duration in seconds."),
     output: Path | None = typer.Option(None, "--output", help="Output directory."),
     planner_model: str | None = typer.Option(None, "--planner-model", help="Claude model."),
@@ -56,7 +56,29 @@ def main(
         "--image-backend",
         help="Image backend: gemini or openai.",
     ),
+    reference_image: Path | None = typer.Option(
+        None,
+        "--reference-image",
+        help="Optional reference image used by the image backend.",
+    ),
+    reference_crop: int | None = typer.Option(
+        None,
+        "--reference-crop",
+        min=1,
+        max=9,
+        help="Crop a 3x3 reference sheet to one panel before image generation.",
+    ),
+    separate_character_bg: bool = typer.Option(
+        False,
+        "--separate-character-bg",
+        help="Generate character and background separately, then composite before video.",
+    ),
     cheap: bool = typer.Option(False, "--cheap", help="Use low-cost generation settings."),
+    character_lock: bool = typer.Option(
+        True,
+        "--character-lock/--no-character-lock",
+        help="Preserve literal character traits during SVP planning.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Generate SVP only."),
     no_video: bool = typer.Option(False, "--no-video", help="Generate image only, no video."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Print verbose JSON logs."),
@@ -70,12 +92,23 @@ def main(
 ) -> None:
     """Generate a video from a natural language prompt."""
     load_dotenv()
+    prompt_text = " ".join(prompt).strip()
+    if not prompt_text:
+        console.print("[red]Prompt must not be empty.[/red]")
+        raise typer.Exit(2)
+
     output_dir = output or Path(os.environ.get("DEFAULT_OUTPUT_DIR", "./out"))
     planner_model = planner_model or os.environ.get("DEFAULT_PLANNER_MODEL", "claude-opus-4-7")
     image_backend = image_backend or os.environ.get("DEFAULT_IMAGE_BACKEND", "gemini")
 
     _validate_choice("planner model", planner_model, PLANNER_MODELS)
     _validate_choice("image backend", image_backend, IMAGE_BACKENDS)
+    _check_reference_image(reference_image, reference_crop)
+    _check_separate_character_bg(
+        separate_character_bg=separate_character_bg,
+        image_backend=image_backend,
+        reference_image=reference_image,
+    )
     _check_api_keys(image_backend=image_backend, require_video=not (no_video or dry_run))
     _check_output_dir(output_dir)
 
@@ -87,12 +120,16 @@ def main(
             image_backend=image_backend,
             cheap_mode=cheap,
             dry_run=dry_run,
+            character_lock=character_lock,
         )
         result = _run_with_progress(
             pipeline=pipeline,
-            prompt=prompt,
+            prompt=prompt_text,
             duration=duration,
             no_video=no_video,
+            reference_image=reference_image,
+            reference_crop=reference_crop,
+            separate_character_bg=separate_character_bg,
             verbose=verbose,
         )
         if logger is not None:
@@ -145,11 +182,46 @@ def _check_output_dir(output_dir: Path) -> None:
         raise typer.Exit(1) from exc
 
 
+def _check_reference_image(reference_image: Path | None, reference_crop: int | None) -> None:
+    if reference_image is None:
+        if reference_crop is not None:
+            console.print("[red]--reference-crop requires --reference-image[/red]")
+            raise typer.Exit(1)
+        return
+
+    if not reference_image.exists():
+        console.print(f"[red]Reference image not found: {reference_image}[/red]")
+        raise typer.Exit(1)
+    if not reference_image.is_file():
+        console.print(f"[red]Reference image is not a file: {reference_image}[/red]")
+        raise typer.Exit(1)
+
+
+def _check_separate_character_bg(
+    separate_character_bg: bool,
+    image_backend: str,
+    reference_image: Path | None,
+) -> None:
+    if not separate_character_bg:
+        return
+    if image_backend != "openai":
+        console.print(
+            "[red]--separate-character-bg currently requires --image-backend openai[/red]"
+        )
+        raise typer.Exit(1)
+    if reference_image is None:
+        console.print("[red]--separate-character-bg requires --reference-image[/red]")
+        raise typer.Exit(1)
+
+
 def _run_with_progress(
     pipeline: Pipeline,
     prompt: str,
     duration: int,
     no_video: bool,
+    reference_image: Path | None,
+    reference_crop: int | None,
+    separate_character_bg: bool,
     verbose: bool,
 ) -> PipelineResult:
     logger = setup_verbose_logger() if verbose else None
@@ -164,6 +236,9 @@ def _run_with_progress(
             user_prompt=prompt,
             duration=duration,
             no_video=no_video,
+            reference_image_path=reference_image,
+            reference_crop=reference_crop,
+            separate_character_bg=separate_character_bg,
             progress_callback=_progress,
         )
 

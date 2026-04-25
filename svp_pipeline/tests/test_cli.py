@@ -58,10 +58,20 @@ class FakePipeline:
         user_prompt: str,
         duration: int | None = None,
         no_video: bool = False,
+        reference_image_path: Path | None = None,
+        reference_crop: int | None = None,
+        separate_character_bg: bool = False,
         progress_callback=None,
     ) -> PipelineResult:
         self.run_calls.append(
-            {"user_prompt": user_prompt, "duration": duration, "no_video": no_video}
+            {
+                "user_prompt": user_prompt,
+                "duration": duration,
+                "no_video": no_video,
+                "reference_image_path": reference_image_path,
+                "reference_crop": reference_crop,
+                "separate_character_bg": separate_character_bg,
+            }
         )
         if FakePipeline.error is not None:
             raise FakePipeline.error
@@ -133,6 +143,10 @@ def test_help_shows_all_options() -> None:
         "--output",
         "--planner-model",
         "--image-backend",
+        "reference image",
+        "--reference-crop",
+        "separately",
+        "--no-character",
         "--cheap",
         "--dry-run",
         "--no-video",
@@ -152,6 +166,28 @@ def test_prompt_required() -> None:
     result = runner.invoke(app, [])
     assert result.exit_code == 2
     assert "prompt" in result.output.lower()
+
+
+def test_unquoted_multi_word_prompt_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "--dry-run",
+            "--output",
+            str(tmp_path),
+            "cyberpunk",
+            "rainy",
+            "neon",
+            "city",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["user_prompt"] == "cyberpunk rainy neon city"
 
 
 def test_duration_out_of_range_fails() -> None:
@@ -246,6 +282,150 @@ def test_backend_selection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     assert result.exit_code == 0
     assert FakePipeline.instances[0].kwargs["image_backend"] == "openai"
+
+
+def test_reference_image_flag_passes_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--no-video",
+            "--reference-image",
+            str(reference),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["reference_image_path"] == reference
+
+
+def test_reference_crop_flag_passes_crop_index(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--no-video",
+            "--reference-image",
+            str(reference),
+            "--reference-crop",
+            "5",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["reference_crop"] == 5
+
+
+def test_separate_character_bg_flag_passes_to_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--no-video",
+            "--image-backend",
+            "openai",
+            "--reference-image",
+            str(reference),
+            "--separate-character-bg",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["separate_character_bg"] is True
+
+
+def test_separate_character_bg_requires_openai_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--no-video",
+            "--reference-image",
+            str(reference),
+            "--separate-character-bg",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "requires --image-backend openai" in result.output
+
+
+def test_reference_crop_requires_reference_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--reference-crop", "1", "--dry-run", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "--reference-crop requires --reference-image" in result.output
+
+
+def test_missing_reference_image_fails_gracefully(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    missing = tmp_path / "missing.png"
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--reference-image", str(missing), "--dry-run", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "Reference image not found" in result.output
+
+
+def test_no_character_lock_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _set_required_keys(monkeypatch)
+    result = runner.invoke(
+        app,
+        ["prompt", "--no-character-lock", "--dry-run", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].kwargs["character_lock"] is False
 
 
 def test_planner_api_error_shows_guidance(
