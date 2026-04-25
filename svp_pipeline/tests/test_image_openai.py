@@ -174,6 +174,11 @@ def test_reference_image_uses_edit_endpoint(tmp_path: Path) -> None:
     assert "Background quality rules" in kwargs["prompt"]
 
 
+def test_reference_file_read_error_raises_value_error(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="failed to read reference image"):
+        OpenAIImageBackend._build_reference_file(tmp_path)
+
+
 def test_image_result_backend_field() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(

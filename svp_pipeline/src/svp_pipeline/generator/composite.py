@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import mimetypes
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -321,8 +320,7 @@ def _looks_subject_related(item: str) -> bool:
 
 
 def _build_reference_file(reference_image_path: Path) -> tuple[str, bytes, str]:
-    mime_type = mimetypes.guess_type(reference_image_path.name)[0] or "image/png"
-    return (reference_image_path.name, reference_image_path.read_bytes(), mime_type)
+    return OpenAIImageBackend._build_reference_file(reference_image_path)
 
 
 def _extract_png_bytes(response: Any) -> bytes:

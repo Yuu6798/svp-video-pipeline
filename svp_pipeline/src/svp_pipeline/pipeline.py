@@ -52,6 +52,7 @@ class Pipeline:
         character_lock: bool = True,
         planner: Planner | None = None,
         image_generator: ImageBackend | None = None,
+        split_image_generator: Any | None = None,
         video_generator: VideoGenerator | None = None,
     ) -> None:
         self.output_dir = Path(output_dir)
@@ -74,6 +75,7 @@ class Pipeline:
             else Planner(model=planner_model, character_lock=character_lock)
         )
         self._image_generator = image_generator
+        self._split_image_generator = split_image_generator
         self._video_generator = video_generator
 
     def run(
@@ -169,7 +171,7 @@ class Pipeline:
                     self._video_generator = video_generator
 
             if separate_character_bg:
-                generator = SplitCompositeImageGenerator()
+                generator = self._resolve_split_image_generator()
             else:
                 generator = self._image_generator
                 if generator is None:
@@ -425,6 +427,21 @@ class Pipeline:
             "native_size_or_resolution": resolution,
             "was_aspect_coerced": False,
         }
+
+    def _resolve_split_image_generator(self) -> Any:
+        if self._split_image_generator is not None:
+            return self._split_image_generator
+        if isinstance(self._image_generator, SplitCompositeImageGenerator):
+            self._split_image_generator = self._image_generator
+            return self._split_image_generator
+        if isinstance(self._image_generator, OpenAIImageBackend):
+            self._split_image_generator = SplitCompositeImageGenerator(
+                client=self._image_generator.client
+            )
+            return self._split_image_generator
+
+        self._split_image_generator = SplitCompositeImageGenerator()
+        return self._split_image_generator
 
     def _validate_image_backend(self) -> None:
         if self.image_backend not in ("gemini", "openai"):

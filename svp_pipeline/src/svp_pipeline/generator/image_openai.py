@@ -82,6 +82,11 @@ class OpenAIImageBackend:
             raise ValueError("OPENAI_API_KEY is required for OpenAIImageBackend")
         self._client = OpenAI(api_key=resolved_key)
 
+    @property
+    def client(self) -> OpenAI | Any:
+        """OpenAI client used by this backend, exposed for split-composite reuse."""
+        return self._client
+
     def generate(
         self,
         svp: SVPVideo,
@@ -173,7 +178,11 @@ class OpenAIImageBackend:
         if not path.exists():
             raise ValueError(f"reference image not found: {path}")
         mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
-        return (path.name, path.read_bytes(), mime_type)
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"failed to read reference image: {path}") from exc
+        return (path.name, data, mime_type)
 
     @staticmethod
     def _extract_png_bytes(response: Any) -> bytes:
