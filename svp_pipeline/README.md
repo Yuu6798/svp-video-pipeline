@@ -53,6 +53,9 @@ svp-video "夕暮れの渋谷で少女が傘を畳む"
 # Low-cost mode: Gemini 1K or OpenAI low, Seedance fast tier, 480p
 svp-video "朝の窓辺の白バラ" --cheap
 
+# Generate and archive binary artifacts to Google Drive
+svp-video "sample prompt" --cheap --archive-drive
+
 # OpenAI image backend
 svp-video "朝の窓辺の白バラ" --image-backend openai --cheap
 
@@ -97,6 +100,7 @@ svp-video "雨の夜の路地" --verbose
 | `--cheap` | Low-cost image/video settings | Off |
 | `--dry-run` | Generate SVP only, with estimated downstream cost | Off |
 | `--no-video` | Generate SVP + image, skip video | Off |
+| `--archive-drive` | Upload generated binary artifacts to Google Drive after a successful non-dry run | Off |
 | `--verbose`, `-v` | Print verbose JSON logs and tracebacks | Off |
 | `--version` | Print package version | |
 | `--help` | Print CLI help | |
@@ -227,12 +231,15 @@ svp-video "テストプロンプト" --cheap
 ## Archive to Google Drive
 
 Optional helper for archiving generated image / video artifacts to a personal
-Google Drive folder.
+Google Drive folder. Use `--archive-drive` on `svp-video` for the normal
+one-step workflow, or run the helper manually for existing output directories.
 
 ```bash
 pip install -e ".[drive]"
 # Create an OAuth Desktop client in Google Cloud Console and save credentials as:
 # ~/.config/svp-pipeline/google-credentials.json
+
+svp-video "test prompt" --cheap --archive-drive
 
 python -m svp_pipeline.tools.archive_to_drive out/20260425-140453
 ```

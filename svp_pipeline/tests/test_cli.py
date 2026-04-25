@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -162,6 +163,7 @@ def test_help_shows_all_options() -> None:
         "--cheap",
         "--dry-run",
         "--no-video",
+        "--archive-drive",
         "--verbose",
         "--version",
     ):
@@ -283,6 +285,79 @@ def test_no_video_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert FakePipeline.instances[0].run_calls[0]["no_video"] is True
+
+
+def test_archive_drive_flag_archives_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    archived_dirs: list[Path] = []
+
+    def fake_archive(result: PipelineResult) -> SimpleNamespace:
+        archived_dirs.append(result.output_dir)
+        return SimpleNamespace(
+            already_archived=False,
+            uploaded_files={"image": "https://drive/image"},
+            skipped_files=[],
+            drive_folder_url="https://drive/folder",
+            log_path=result.log_path,
+        )
+
+    monkeypatch.setattr(cli_mod, "_archive_outputs_to_drive", fake_archive)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--no-video", "--archive-drive", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert archived_dirs == [tmp_path / "20260425-000000"]
+    assert "Drive archive: uploaded 1 file" in result.output
+
+
+def test_archive_drive_skipped_for_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+
+    def fail_archive(_result: PipelineResult) -> None:
+        raise AssertionError("archive should not run for dry-run")
+
+    monkeypatch.setattr(cli_mod, "_archive_outputs_to_drive", fail_archive)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--dry-run", "--archive-drive", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "--archive-drive skipped for --dry-run" in result.output
+
+
+def test_archive_drive_failure_reports_local_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+
+    def fail_archive(result: PipelineResult) -> None:
+        raise RuntimeError(
+            f"Archive to Drive failed: boom. Local outputs remain at: {result.output_dir}"
+        )
+
+    monkeypatch.setattr(cli_mod, "_archive_outputs_to_drive", fail_archive)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--no-video", "--archive-drive", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "Archive to Drive failed" in result.output
+    assert "Local outputs remain at" in result.output
+    assert "20260425-000000" in result.output
 
 
 def test_backend_selection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
