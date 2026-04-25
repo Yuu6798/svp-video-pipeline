@@ -44,8 +44,4 @@ jobs:
         run: ruff check src tests
 
       - name: Test
-        env:
-          # Rich/Typer の help 出力に挿入される ANSI コードで test_cli の
-          # 部分文字列マッチが壊れるのを防ぐ。TERM=dumb で Rich はプレーン出力。
-          TERM: dumb
         run: pytest tests/ -q --tb=short
