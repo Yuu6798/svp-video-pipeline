@@ -120,7 +120,8 @@ README の運用ルール:
 ### Branches
 
 - `main` — 安定版。直接 push しない（例外: `.claude/memory/` の運用ログは直接 commit 可）
-- `claude/*` — 作業ブランチ
+- `claude/*` — Claude Code が実装する作業ブランチ
+- `codex/*` — Codex が実装する作業ブランチ
 
 ### Commit Messages
 
