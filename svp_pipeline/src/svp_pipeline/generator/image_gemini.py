@@ -116,9 +116,13 @@ class GeminiImageBackend:
         if not path.exists():
             raise ValueError(f"reference image not found: {path}")
         mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        try:
+            image_bytes = path.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"failed to read reference image: {path}") from exc
         return [
             prompt,
-            types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type),
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
         ]
 
     def _extract_png_bytes(self, response: Any) -> bytes:

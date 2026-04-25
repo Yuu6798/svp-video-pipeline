@@ -251,6 +251,19 @@ def test_character_lock_ignores_negated_japanese_identity_traits() -> None:
     assert "katana" not in svp.c3.evaluation_criteria.hit_list
 
 
+def test_character_lock_detects_japanese_single_subject_intent() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("単独の若い女性、銀髪ポニーテール、赤い瞳")
+
+    assert "female character" in svp.identity_locks
+    assert "red eyes" in svp.identity_locks
+    assert "single primary character only" in svp.composition_layer.constraints.required
+    assert "extra characters" in svp.composition_layer.constraints.forbidden
+    assert "extra characters" in svp.c3.constraints.forbidden
+
+
 def test_character_lock_can_be_disabled() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client, character_lock=False)

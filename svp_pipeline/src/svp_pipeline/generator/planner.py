@@ -400,6 +400,7 @@ def _append_unique(existing: list[str], additions: list[str]) -> list[str]:
 
 
 def _prompt_indicates_single_subject(user_prompt: str) -> bool:
+    prompt = " ".join(user_prompt.replace(";", ",").split())
     lower = " ".join(user_prompt.lower().replace(";", ",").split())
     multi_subject_patterns = [
         r"\b(?:two|three|four|multiple|several)\s+(?:\w+\s+){0,2}"
@@ -411,6 +412,21 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
     ]
     if any(re.search(pattern, lower) for pattern in multi_subject_patterns):
         return False
+    multi_subject_literals = (
+        "二人",
+        "二名",
+        "2人",
+        "2名",
+        "複数",
+        "複数人",
+        "群衆",
+        "グループ",
+        "ペア",
+        "カップル",
+        "双子",
+    )
+    if any(_contains_unnegated_literal(prompt, literal) for literal in multi_subject_literals):
+        return False
 
     single_subject_patterns = [
         r"\b(?:a|one|single|solo|lone)\s+(?:young\s+adult\s+)?"
@@ -418,7 +434,19 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
         r"\b(?:young adult woman|young woman|female character|woman|girl)\b",
         r"\b(?:young adult man|young man|male character|man|boy)\b",
     ]
-    return any(re.search(pattern, lower) for pattern in single_subject_patterns)
+    if any(re.search(pattern, lower) for pattern in single_subject_patterns):
+        return True
+    single_subject_literals = (
+        "単独",
+        "単独の女性",
+        "一人",
+        "一名",
+        "1人",
+        "1名",
+        "ひとり",
+        "ソロ",
+    )
+    return any(_contains_unnegated_literal(prompt, literal) for literal in single_subject_literals)
 
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:

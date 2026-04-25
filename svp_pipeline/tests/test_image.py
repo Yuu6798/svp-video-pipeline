@@ -131,6 +131,17 @@ def test_generate_with_reference_image_passes_multimodal_contents(tmp_path: Path
     assert inline_part.inline_data.data == TINY_PNG_BYTES
 
 
+def test_reference_image_read_error_raises_value_error(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    generator = ImageGenerator(client=client)
+
+    with pytest.raises(ValueError, match="failed to read reference image"):
+        generator.generate(svp=svp, reference_image_path=tmp_path)
+
+    client.models.generate_content.assert_not_called()
+
+
 def test_refusal_raises_image_refusal_error() -> None:
     svp = _load("shibuya_dusk.json")
     client = DummyClient(response=build_refusal_response("SAFETY"))
