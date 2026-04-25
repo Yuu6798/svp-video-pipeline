@@ -302,6 +302,40 @@ def test_planner_does_not_inject_neon_style_for_weapon_only_risk() -> None:
     )
 
 
+def test_planner_does_not_add_character_contact_for_still_life_weapon() -> None:
+    client = DummyClient(responses=[VALID_STILL_LIFE_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("still life product shot of a katana on a wooden table")
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon stays attached to the specified hand, waist, or contact point" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+
+
+def test_planner_background_quality_rules_follow_risk_flags() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("single young adult woman with a katana in a quiet forest")
+
+    assert "broad smooth wet reflection bands" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "sparse soft neon blocks" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "background detail stays subordinate to character detail" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
 def test_planner_respects_explicit_detailed_city_background() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)

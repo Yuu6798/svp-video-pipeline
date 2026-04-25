@@ -395,6 +395,7 @@ class Planner:
             return svp
 
         single_subject_intent = _prompt_indicates_single_subject(user_prompt)
+        character_weapon_contact = _prompt_indicates_character_weapon_contact(user_prompt)
         detailed_background = _detect_detailed_background_request(user_prompt)
         background_forbidden = _background_forbidden_items(risk_flags, detailed_background)
 
@@ -464,7 +465,7 @@ class Planner:
         style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
 
         pose_layer = svp.pose_layer
-        if "weapon" in risk_flags:
+        if "weapon" in risk_flags and character_weapon_contact:
             pose_required = _append_unique(
                 list(svp.pose_layer.constraints.required),
                 [
@@ -554,7 +555,10 @@ class Planner:
                 ),
                 "background_quality_rules": _append_unique(
                     list(svp.reference_usage_policy.background_quality_rules),
-                    _background_quality_rules(detailed_background),
+                    _background_quality_rules(
+                        risk_flags,
+                        detailed_background=detailed_background,
+                    ),
                 ),
                 "object_instance_rules": _append_unique(
                     list(svp.reference_usage_policy.object_instance_rules),
@@ -841,6 +845,17 @@ def _detect_detailed_background_request(user_prompt: str) -> bool:
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in detail_patterns)
 
 
+def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    contact_patterns = [
+        r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
+        r"\b(?:hand|hands|waist|belt|hip|back|shoulder|grip|holding|wielding)\b",
+        r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
+        r"(?:waist|belt|hip|back|hand)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
+
+
 def _detect_drawn_weapon_request(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     drawn_patterns = [
@@ -927,20 +942,28 @@ def _background_forbidden_items(
     return items
 
 
-def _background_quality_rules(detailed_background: bool) -> list[str]:
+def _background_quality_rules(
+    risk_flags: set[str],
+    *,
+    detailed_background: bool,
+) -> list[str]:
     if detailed_background:
-        return [
+        rules = [
             "background detail remains organized and subordinate to character detail",
             "readable signs appear only where explicitly requested",
             "background micro-detail is grouped into clean blocks",
         ]
-    return [
-        "background acts as smooth lighting support",
-        "broad smooth wet reflection bands",
-        "sparse soft neon blocks",
-        "simplified dark building silhouettes",
-        "background detail stays subordinate to character detail",
-    ]
+    else:
+        rules = [
+            "background acts as smooth lighting support",
+            "simplified dark building silhouettes",
+            "background detail stays subordinate to character detail",
+        ]
+    if "wet_reflection" in risk_flags:
+        rules.append("broad smooth wet reflection bands")
+    if "dense_city" in risk_flags:
+        rules.append("sparse soft neon blocks")
+    return rules
 
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:
