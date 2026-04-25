@@ -113,6 +113,19 @@ def test_plan_uses_tool_choice_forced() -> None:
     assert client.messages.calls[0]["tool_choice"] == {"type": "tool", "name": "generate_svp_video"}
 
 
+def test_system_prompt_teaches_svp_methodology() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    planner.plan("system prompt test")
+
+    system_prompt = client.messages.calls[0]["system"]
+    assert "SVP is not merely a JSON schema" in system_prompt
+    assert "semantic control protocol" in system_prompt
+    assert "positive physical/visual states" in system_prompt
+    assert "Background Simplicity Policy" in system_prompt
+
+
 def test_plan_injects_duration() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -200,6 +213,41 @@ def test_character_lock_preserves_literal_subject_traits() -> None:
         svp.reference_usage_policy.background_quality_rules
     )
     assert "clean background matching the SVP scene context" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
+def test_planner_adds_background_noise_controls_for_high_risk_prompt() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, transparent umbrella, katana at her waist, "
+        "wet reflections"
+    )
+
+    assert "background acts as smooth lighting support, not the subject" in (
+        svp.composition_layer.constraints.required
+    )
+    assert "background: sparse neon blocks instead of dense signage" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "dense signage" in svp.composition_layer.constraints.forbidden
+    assert "speckled light noise" in svp.style_layer.constraints.forbidden
+    assert "background simplicity has higher priority than background detail" in (
+        svp.c3.constraints.required
+    )
+    assert "main weapon is a single physical object" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "no weapon-like reflections in the background" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "broad smooth wet reflection bands" in (
         svp.reference_usage_policy.background_quality_rules
     )
 

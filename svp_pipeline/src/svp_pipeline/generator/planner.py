@@ -78,6 +78,7 @@ class Planner:
             svp = self._inject_motion_forbidden(svp)
             if self.character_lock:
                 svp = self._apply_character_locks(svp=svp, user_prompt=user_prompt)
+            svp = self._apply_background_noise_controls(svp=svp, user_prompt=user_prompt)
             svp = self._enforce_requested_duration(svp=svp, duration=duration)
             return svp
 
@@ -387,6 +388,178 @@ class Planner:
             }
         )
 
+    def _apply_background_noise_controls(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
+        risk_flags = _detect_background_noise_risk(user_prompt)
+        if not risk_flags:
+            return svp
+
+        depth_layers = _append_unique(
+            list(svp.composition_layer.depth_layers),
+            _background_depth_layers(risk_flags),
+        )
+        composition_required = _append_unique(
+            list(svp.composition_layer.constraints.required),
+            [
+                "background acts as smooth lighting support, not the subject",
+                "character detail has priority over background detail",
+                "distant background uses sparse simplified shapes",
+            ],
+        )
+        composition_forbidden = _append_unique(
+            list(svp.composition_layer.constraints.forbidden),
+            _background_forbidden_items(risk_flags),
+        )
+        composition_constraints = svp.composition_layer.constraints.model_copy(
+            update={
+                "required": composition_required,
+                "forbidden": composition_forbidden,
+            }
+        )
+        composition_layer = svp.composition_layer.model_copy(
+            update={
+                "depth_layers": depth_layers,
+                "constraints": composition_constraints,
+            }
+        )
+
+        style_required = _append_unique(
+            list(svp.style_layer.constraints.required),
+            [
+                "background uses broad smooth shapes and controlled gradients",
+                "background micro-line density stays low",
+                "neon atmosphere is carried by large clean light blocks",
+            ],
+        )
+        style_forbidden = _append_unique(
+            list(svp.style_layer.constraints.forbidden),
+            _background_forbidden_items(risk_flags),
+        )
+        style_constraints = svp.style_layer.constraints.model_copy(
+            update={
+                "required": style_required,
+                "forbidden": style_forbidden,
+            }
+        )
+        style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
+
+        pose_layer = svp.pose_layer
+        if "weapon" in risk_flags:
+            pose_required = _append_unique(
+                list(svp.pose_layer.constraints.required),
+                [
+                    "main weapon is a single physical object",
+                    "main weapon stays attached to the specified hand, waist, or contact point",
+                ],
+            )
+            pose_forbidden = _append_unique(
+                list(svp.pose_layer.constraints.forbidden),
+                [
+                    "duplicated weapon",
+                    "weapon trail",
+                    "weapon-like background reflection",
+                    "wrong weapon contact point",
+                ],
+            )
+            pose_contact_points = _append_unique(
+                list(svp.pose_layer.contact_points),
+                ["main weapon attached to character contact point"],
+            )
+            pose_constraints = svp.pose_layer.constraints.model_copy(
+                update={"required": pose_required, "forbidden": pose_forbidden}
+            )
+            pose_layer = svp.pose_layer.model_copy(
+                update={
+                    "constraints": pose_constraints,
+                    "contact_points": pose_contact_points,
+                }
+            )
+
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            [
+                (
+                    "Priority rule: character detail > lighting atmosphere > "
+                    "wet reflections > background simplicity"
+                ),
+                "background simplicity has higher priority than background detail",
+                "background remains a clean support field for the PoR",
+            ],
+        )
+        global_forbidden = _append_unique(
+            list(svp.c3.constraints.forbidden),
+            _background_forbidden_items(risk_flags),
+        )
+        global_constraints = svp.c3.constraints.model_copy(
+            update={
+                "required": global_required,
+                "forbidden": global_forbidden,
+            }
+        )
+
+        critical_fail_conditions = _append_unique(
+            list(svp.c3.evaluation_criteria.critical_fail_conditions),
+            [
+                "background detail overwhelms the character",
+                "background becomes gritty, speckled, or noisy",
+                "background contains character-like silhouettes",
+            ],
+        )
+        evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
+            update={"critical_fail_conditions": critical_fail_conditions}
+        )
+        c3 = svp.c3.model_copy(
+            update={
+                "constraints": global_constraints,
+                "evaluation_criteria": evaluation_criteria,
+            }
+        )
+
+        reference_usage_policy = svp.reference_usage_policy.model_copy(
+            update={
+                "do_not_copy_from_reference": _append_unique(
+                    list(svp.reference_usage_policy.do_not_copy_from_reference),
+                    _background_forbidden_items(risk_flags),
+                ),
+                "background_quality_rules": _append_unique(
+                    list(svp.reference_usage_policy.background_quality_rules),
+                    [
+                        "background acts as smooth lighting support",
+                        "broad smooth wet reflection bands",
+                        "sparse soft neon blocks",
+                        "simplified dark building silhouettes",
+                        "background detail stays subordinate to character detail",
+                    ],
+                ),
+                "object_instance_rules": _append_unique(
+                    list(svp.reference_usage_policy.object_instance_rules),
+                    [
+                        "no weapon-like reflections in the background",
+                        "no duplicated prop silhouettes",
+                    ]
+                    if "weapon" in risk_flags
+                    else [],
+                ),
+            }
+        )
+
+        variation_policy = svp.variation_policy.model_copy(
+            update={
+                "background_structure_variation": "minimal",
+                "color_variation": "small",
+            }
+        )
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "style_layer": style_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+                "variation_policy": variation_policy,
+            }
+        )
+
 
 def _load_system_prompt() -> str:
     return (
@@ -457,6 +630,75 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
         "ソロ",
     )
     return any(_contains_unnegated_literal(prompt, literal) for literal in single_subject_literals)
+
+
+def _detect_background_noise_risk(user_prompt: str) -> set[str]:
+    lower_prompt = user_prompt.lower()
+    flags: set[str] = set()
+
+    if re.search(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
+        flags.add("dense_city")
+    if re.search(r"\b(?:rain|rainy|wet|reflection|reflections|pavement)\b", lower_prompt):
+        flags.add("wet_reflection")
+    if re.search(r"\b(?:glass|transparent|umbrella)\b", lower_prompt):
+        flags.add("transparent_object")
+    if re.search(r"\b(?:katana|sword|blade|gun|weapon)\b", lower_prompt):
+        flags.add("weapon")
+    if re.search(
+        r"\b(?:noise|noisy|grain|gritty|speckle|speckled|busy background)\b",
+        lower_prompt,
+    ):
+        flags.add("explicit_noise_control")
+
+    return flags
+
+
+def _background_depth_layers(risk_flags: set[str]) -> list[str]:
+    layers = [
+        "foreground: single character in sharp detail",
+        "background: simplified dark silhouettes with sparse soft light blocks",
+    ]
+    if "wet_reflection" in risk_flags:
+        layers.append("midground: broad smooth wet reflection bands")
+    if "dense_city" in risk_flags:
+        layers.append("background: sparse neon blocks instead of dense signage")
+    if "transparent_object" in risk_flags:
+        layers.append("transparent objects stay clean and do not multiply background detail")
+    return layers
+
+
+def _background_forbidden_items(risk_flags: set[str]) -> list[str]:
+    items = [
+        "dense signage",
+        "tiny readable text",
+        "speckled light noise",
+        "gritty background texture",
+        "scratch-like background artifacts",
+        "background silhouettes resembling the character",
+    ]
+    if "wet_reflection" in risk_flags:
+        items.extend(
+            [
+                "fragmented noisy wet reflections",
+                "small glitter-like reflection speckles",
+            ]
+        )
+    if "weapon" in risk_flags:
+        items.extend(
+            [
+                "weapon-like reflections in the background",
+                "duplicated weapon silhouettes",
+                "diagonal blade trails behind the character",
+            ]
+        )
+    if "transparent_object" in risk_flags:
+        items.extend(
+            [
+                "duplicated umbrella ribs",
+                "transparent object filled with noisy background clutter",
+            ]
+        )
+    return items
 
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:
