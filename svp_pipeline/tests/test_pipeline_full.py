@@ -37,16 +37,18 @@ class FakeImageGenerator:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def generate(self, svp: SVPVideo, resolution: str = "2K") -> ImageResult:
-        self.calls.append(resolution)
+    def generate(self, svp: SVPVideo, quality_mode: str = "normal") -> ImageResult:
+        self.calls.append(quality_mode)
         return ImageResult(
             png_bytes=TINY_PNG_BYTES,
-            cost_usd=0.08 if resolution == "2K" else 0.04,
+            cost_usd=0.08 if quality_mode == "normal" else 0.04,
             elapsed_sec=0.11,
             raw_prompt="image prompt",
             model="gemini-3-pro-image-preview",
-            resolution=resolution,  # type: ignore[arg-type]
+            backend="gemini",
             aspect_ratio=svp.composition_layer.aspect_ratio,
+            native_size_or_resolution="2K" if quality_mode == "normal" else "1K",
+            was_aspect_coerced=False,
         )
 
 
@@ -166,7 +168,7 @@ def test_cheap_mode_fast_tier_and_480p(tmp_path: Path) -> None:
     )
 
     pipeline.run("prompt", duration=5, no_video=False)
-    assert fake_image.calls[0] == "1K"
+    assert fake_image.calls[0] == "cheap"
     assert fake_video.calls[0][0] == "fast"
     assert fake_video.calls[0][1] == "480p"
 
