@@ -336,6 +336,8 @@ def _find_folder(service, name: str, parent_id: str | None) -> dict[str, Any] | 
     ]
     if parent_id:
         conditions.append(f"'{parent_id}' in parents")
+    else:
+        conditions.append("'root' in parents")
     query = " and ".join(conditions)
     request = service.files().list(
         q=query,

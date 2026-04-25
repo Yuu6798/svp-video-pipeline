@@ -135,6 +135,17 @@ def test_reuses_existing_folder() -> None:
     assert service.created_folders == []
 
 
+def test_root_folder_lookup_is_limited_to_drive_root_parent() -> None:
+    service = MockDriveService()
+    nested_parent_id = service.register_folder("Other", None, "other-id")
+    service.register_folder("SVP Archive", nested_parent_id, "nested-archive-id")
+
+    folder_id, _ = archive_mod.ensure_drive_folder(service, "SVP Archive", "20260425-140453")
+
+    assert folder_id != "nested-archive-id"
+    assert service.created_folders[0]["name"] == "SVP Archive"
+
+
 def test_adds_drive_urls_field(tmp_path: Path) -> None:
     run_dir = _make_run_dir(tmp_path)
     log_path = run_dir / "log.json"

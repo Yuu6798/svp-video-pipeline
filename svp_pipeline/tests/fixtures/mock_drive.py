@@ -132,4 +132,5 @@ def _extract_parent(query: str) -> str | None:
         return None
     end = query.index(marker)
     start = query.rfind("'", 0, end)
-    return query[start + 1 : end]
+    parent_id = query[start + 1 : end]
+    return None if parent_id == "root" else parent_id
