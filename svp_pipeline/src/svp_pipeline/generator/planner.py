@@ -78,6 +78,8 @@ class Planner:
             svp = self._inject_motion_forbidden(svp)
             if self.character_lock:
                 svp = self._apply_character_locks(svp=svp, user_prompt=user_prompt)
+            svp = self._apply_background_noise_controls(svp=svp, user_prompt=user_prompt)
+            svp = self._apply_object_contact_audit(svp=svp, user_prompt=user_prompt)
             svp = self._enforce_requested_duration(svp=svp, duration=duration)
             return svp
 
@@ -387,6 +389,355 @@ class Planner:
             }
         )
 
+    def _apply_background_noise_controls(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
+        risk_flags = _detect_background_noise_risk(user_prompt)
+        if not risk_flags:
+            return svp
+
+        single_subject_intent = _prompt_indicates_single_subject(user_prompt)
+        character_weapon_contact = _prompt_indicates_character_weapon_contact(user_prompt)
+        detailed_background = _detect_detailed_background_request(user_prompt)
+        background_forbidden = _background_forbidden_items(risk_flags, detailed_background)
+
+        depth_layers = _append_unique(
+            list(svp.composition_layer.depth_layers),
+            _background_depth_layers(
+                risk_flags,
+                single_subject_intent=single_subject_intent,
+                detailed_background=detailed_background,
+            ),
+        )
+        composition_required_items = [
+            "background acts as smooth lighting support, not the subject",
+            "character detail has priority over background detail",
+        ]
+        if detailed_background:
+            composition_required_items.append(
+                "background detail remains organized and subordinate to the PoR"
+            )
+        else:
+            composition_required_items.append("distant background uses sparse simplified shapes")
+        composition_required = _append_unique(
+            list(svp.composition_layer.constraints.required),
+            composition_required_items,
+        )
+        composition_forbidden = _append_unique(
+            list(svp.composition_layer.constraints.forbidden),
+            background_forbidden,
+        )
+        composition_constraints = svp.composition_layer.constraints.model_copy(
+            update={
+                "required": composition_required,
+                "forbidden": composition_forbidden,
+            }
+        )
+        composition_layer = svp.composition_layer.model_copy(
+            update={
+                "depth_layers": depth_layers,
+                "constraints": composition_constraints,
+            }
+        )
+
+        style_required_items = [
+            "background uses broad smooth shapes and controlled gradients",
+            "background micro-line density stays low",
+        ]
+        if "dense_city" in risk_flags:
+            style_required_items.append(
+                "neon atmosphere is carried by large clean light blocks"
+            )
+        if detailed_background:
+            style_required_items.append("requested city detail is grouped into clean blocks")
+        style_required = _append_unique(
+            list(svp.style_layer.constraints.required),
+            style_required_items,
+        )
+        style_forbidden = _append_unique(
+            list(svp.style_layer.constraints.forbidden),
+            background_forbidden,
+        )
+        style_constraints = svp.style_layer.constraints.model_copy(
+            update={
+                "required": style_required,
+                "forbidden": style_forbidden,
+            }
+        )
+        style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
+
+        pose_layer = svp.pose_layer
+        if "weapon" in risk_flags and character_weapon_contact:
+            pose_required = _append_unique(
+                list(svp.pose_layer.constraints.required),
+                [
+                    "main weapon is a single physical object",
+                    "main weapon stays attached to the specified hand, waist, or contact point",
+                ],
+            )
+            pose_forbidden = _append_unique(
+                list(svp.pose_layer.constraints.forbidden),
+                [
+                    "duplicated weapon",
+                    "weapon trail",
+                    "weapon-like background reflection",
+                    "wrong weapon contact point",
+                ],
+            )
+            pose_contact_points = _append_unique(
+                list(svp.pose_layer.contact_points),
+                ["main weapon attached to character contact point"],
+            )
+            pose_constraints = svp.pose_layer.constraints.model_copy(
+                update={"required": pose_required, "forbidden": pose_forbidden}
+            )
+            pose_layer = svp.pose_layer.model_copy(
+                update={
+                    "constraints": pose_constraints,
+                    "contact_points": pose_contact_points,
+                }
+            )
+
+        if detailed_background:
+            global_required_items = [
+                (
+                    "Priority rule: character detail > requested background organization > "
+                    "lighting atmosphere > wet reflections"
+                ),
+                "background detail remains readable only where requested",
+                "background remains subordinate to the PoR",
+            ]
+        else:
+            global_required_items = [
+                (
+                    "Priority rule: character detail > lighting atmosphere > "
+                    "wet reflections > background simplicity"
+                ),
+                "background simplicity has higher priority than background detail",
+                "background remains a clean support field for the PoR",
+            ]
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            global_required_items,
+        )
+        global_forbidden = _append_unique(
+            list(svp.c3.constraints.forbidden),
+            background_forbidden,
+        )
+        global_constraints = svp.c3.constraints.model_copy(
+            update={
+                "required": global_required,
+                "forbidden": global_forbidden,
+            }
+        )
+
+        critical_fail_conditions = _append_unique(
+            list(svp.c3.evaluation_criteria.critical_fail_conditions),
+            [
+                "background detail overwhelms the character",
+                "background becomes gritty, speckled, or noisy",
+                "background contains character-like silhouettes",
+            ],
+        )
+        evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
+            update={"critical_fail_conditions": critical_fail_conditions}
+        )
+        c3 = svp.c3.model_copy(
+            update={
+                "constraints": global_constraints,
+                "evaluation_criteria": evaluation_criteria,
+            }
+        )
+
+        reference_usage_policy = svp.reference_usage_policy.model_copy(
+            update={
+                "do_not_copy_from_reference": _append_unique(
+                    list(svp.reference_usage_policy.do_not_copy_from_reference),
+                    background_forbidden,
+                ),
+                "background_quality_rules": _append_unique(
+                    list(svp.reference_usage_policy.background_quality_rules),
+                    _background_quality_rules(
+                        risk_flags,
+                        detailed_background=detailed_background,
+                    ),
+                ),
+                "object_instance_rules": _append_unique(
+                    list(svp.reference_usage_policy.object_instance_rules),
+                    [
+                        "no weapon-like reflections in the background",
+                        "no duplicated prop silhouettes",
+                    ]
+                    if "weapon" in risk_flags
+                    else [],
+                ),
+            }
+        )
+
+        variation_policy = svp.variation_policy.model_copy(
+            update={
+                "background_structure_variation": "minimal",
+                "color_variation": "small",
+            }
+        )
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "style_layer": style_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+                "variation_policy": variation_policy,
+            }
+        )
+
+    def _apply_object_contact_audit(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
+        object_flags = _detect_object_contact_risk(user_prompt)
+        if not {"umbrella", "katana"}.issubset(object_flags):
+            return svp
+        if _detect_drawn_weapon_request(user_prompt):
+            return svp
+
+        pose_required = _append_unique(
+            list(svp.pose_layer.constraints.required),
+            [
+                "one hand holds the umbrella handle",
+                "the other hand stays relaxed near the waist",
+                "katana is sheathed and attached to the waist belt",
+                "only the katana hilt and sheath may be visible",
+                "hands do not hold the katana while holding the umbrella",
+            ],
+        )
+        pose_forbidden = _append_unique(
+            list(svp.pose_layer.constraints.forbidden),
+            [
+                "floating katana",
+                "unsheathed blade",
+                "drawn katana",
+                "katana held while both hands hold umbrella",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        pose_contact_points = _append_unique(
+            list(svp.pose_layer.contact_points),
+            [
+                "one hand <-> umbrella handle",
+                "katana sheath <-> waist belt",
+            ],
+        )
+        pose_constraints = svp.pose_layer.constraints.model_copy(
+            update={"required": pose_required, "forbidden": pose_forbidden}
+        )
+        pose_layer = svp.pose_layer.model_copy(
+            update={
+                "hand_state": (
+                    "one hand holds the umbrella handle; the other hand stays relaxed "
+                    "near the waist; no hand holds the katana"
+                ),
+                "contact_points": pose_contact_points,
+                "constraints": pose_constraints,
+            }
+        )
+
+        composition_required = _append_unique(
+            list(svp.composition_layer.constraints.required),
+            [
+                "umbrella and katana use separate non-conflicting contact points",
+                "katana remains fixed to the waist belt while the umbrella is held",
+            ],
+        )
+        composition_forbidden = _append_unique(
+            list(svp.composition_layer.constraints.forbidden),
+            [
+                "floating katana",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        composition_constraints = svp.composition_layer.constraints.model_copy(
+            update={
+                "required": composition_required,
+                "forbidden": composition_forbidden,
+            }
+        )
+        composition_layer = svp.composition_layer.model_copy(
+            update={"constraints": composition_constraints}
+        )
+
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            [
+                (
+                    "Object-contact proposition: one hand holds umbrella; "
+                    "katana remains sheathed at waist"
+                ),
+                "no extra sword-like object may appear outside the waist sheath",
+            ],
+        )
+        global_forbidden = _append_unique(
+            list(svp.c3.constraints.forbidden),
+            [
+                "floating katana",
+                "unsheathed blade",
+                "drawn katana",
+                "katana held while both hands hold umbrella",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        global_constraints = svp.c3.constraints.model_copy(
+            update={"required": global_required, "forbidden": global_forbidden}
+        )
+        critical_fail_conditions = _append_unique(
+            list(svp.c3.evaluation_criteria.critical_fail_conditions),
+            [
+                "katana floats away from waist sheath",
+                "both hands hold umbrella while katana appears unsheathed or floating",
+                "background produces sword-like reflections or extra blades",
+            ],
+        )
+        evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
+            update={"critical_fail_conditions": critical_fail_conditions}
+        )
+        c3 = svp.c3.model_copy(
+            update={
+                "constraints": global_constraints,
+                "evaluation_criteria": evaluation_criteria,
+            }
+        )
+
+        reference_usage_policy = svp.reference_usage_policy.model_copy(
+            update={
+                "object_instance_rules": _append_unique(
+                    list(svp.reference_usage_policy.object_instance_rules),
+                    [
+                        "umbrella count = exactly one",
+                        "katana count = exactly one",
+                        "katana must be sheathed and attached to waist, not floating",
+                        "katana may not be held if umbrella occupies a hand",
+                        "no sword-like background reflection",
+                    ],
+                ),
+                "do_not_copy_from_reference": _append_unique(
+                    list(svp.reference_usage_policy.do_not_copy_from_reference),
+                    [
+                        "floating swords from reference background",
+                        "drawn blade pose unless explicitly requested",
+                        "duplicate weapon silhouettes",
+                    ],
+                ),
+            }
+        )
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
 
 def _load_system_prompt() -> str:
     return (
@@ -457,6 +808,162 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
         "ソロ",
     )
     return any(_contains_unnegated_literal(prompt, literal) for literal in single_subject_literals)
+
+
+def _detect_background_noise_risk(user_prompt: str) -> set[str]:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    flags: set[str] = set()
+
+    if _contains_unnegated(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
+        flags.add("dense_city")
+    if _contains_unnegated(
+        r"\b(?:rain|rainy|wet|reflection|reflections|pavement)\b",
+        lower_prompt,
+    ):
+        flags.add("wet_reflection")
+    if _contains_unnegated(r"\b(?:glass|transparent|umbrella)\b", lower_prompt):
+        flags.add("transparent_object")
+    if _contains_unnegated(r"\b(?:katana|sword|blade|gun|weapon)\b", lower_prompt):
+        flags.add("weapon")
+    if _contains_unnegated(
+        r"\b(?:noise|noisy|grain|gritty|speckle|speckled|busy background)\b",
+        lower_prompt,
+    ):
+        flags.add("explicit_noise_control")
+
+    return flags
+
+
+def _detect_detailed_background_request(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    detail_patterns = [
+        r"\b(?:detailed|highly detailed|intricate|dense|busy)\s+"
+        r"(?:cityscape|background|neon signage|signage|city|street)\b",
+        r"\b(?:readable|legible)\s+(?:neon\s+)?(?:signage|signs|text)\b",
+        r"\b(?:many|dense|crowded)\s+(?:neon\s+)?(?:signs|signage)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in detail_patterns)
+
+
+def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    contact_patterns = [
+        r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
+        r"\b(?:hand|hands|waist|belt|hip|back|shoulder|grip|holding|wielding)\b",
+        r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
+        r"(?:waist|belt|hip|back|hand)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
+
+
+def _detect_drawn_weapon_request(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    drawn_patterns = [
+        r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
+        r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
+        r"\b(?:holding|wielding|gripping)\s+(?:a\s+)?(?:katana|sword|blade)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in drawn_patterns)
+
+
+def _detect_object_contact_risk(user_prompt: str) -> set[str]:
+    prompt = " ".join(user_prompt.replace(";", ",").split())
+    lower = prompt.lower()
+    flags: set[str] = set()
+
+    if _contains_unnegated(r"\b(?:umbrella|parasol)\b", lower):
+        flags.add("umbrella")
+    if _contains_unnegated(r"\b(?:katana|sword|blade)\b", lower):
+        flags.add("katana")
+
+    return flags
+
+
+def _background_depth_layers(
+    risk_flags: set[str],
+    *,
+    single_subject_intent: bool,
+    detailed_background: bool,
+) -> list[str]:
+    foreground = (
+        "foreground: single character in sharp detail"
+        if single_subject_intent
+        else "foreground: requested subject(s) in sharp detail"
+    )
+    background = (
+        "background: organized requested city detail kept subordinate to the PoR"
+        if detailed_background
+        else "background: simplified dark silhouettes with sparse soft light blocks"
+    )
+    layers = [foreground, background]
+    if "wet_reflection" in risk_flags:
+        layers.append("midground: broad smooth wet reflection bands")
+    if "dense_city" in risk_flags and not detailed_background:
+        layers.append("background: sparse neon blocks instead of dense signage")
+    if "transparent_object" in risk_flags:
+        layers.append("transparent objects stay clean and do not multiply background detail")
+    return layers
+
+
+def _background_forbidden_items(
+    risk_flags: set[str],
+    detailed_background: bool = False,
+) -> list[str]:
+    items = [
+        "speckled light noise",
+        "gritty background texture",
+        "scratch-like background artifacts",
+        "background silhouettes resembling the character",
+    ]
+    if not detailed_background:
+        items.extend(["dense signage", "tiny readable text"])
+    if "wet_reflection" in risk_flags:
+        items.extend(
+            [
+                "fragmented noisy wet reflections",
+                "small glitter-like reflection speckles",
+            ]
+        )
+    if "weapon" in risk_flags:
+        items.extend(
+            [
+                "weapon-like reflections in the background",
+                "duplicated weapon silhouettes",
+                "diagonal blade trails behind the character",
+            ]
+        )
+    if "transparent_object" in risk_flags:
+        items.extend(
+            [
+                "duplicated umbrella ribs",
+                "transparent object filled with noisy background clutter",
+            ]
+            )
+    return items
+
+
+def _background_quality_rules(
+    risk_flags: set[str],
+    *,
+    detailed_background: bool,
+) -> list[str]:
+    if detailed_background:
+        rules = [
+            "background detail remains organized and subordinate to character detail",
+            "readable signs appear only where explicitly requested",
+            "background micro-detail is grouped into clean blocks",
+        ]
+    else:
+        rules = [
+            "background acts as smooth lighting support",
+            "simplified dark building silhouettes",
+            "background detail stays subordinate to character detail",
+        ]
+    if "wet_reflection" in risk_flags:
+        rules.append("broad smooth wet reflection bands")
+    if "dense_city" in risk_flags:
+        rules.append("sparse soft neon blocks")
+    return rules
 
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:

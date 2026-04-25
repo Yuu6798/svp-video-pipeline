@@ -113,6 +113,20 @@ def test_plan_uses_tool_choice_forced() -> None:
     assert client.messages.calls[0]["tool_choice"] == {"type": "tool", "name": "generate_svp_video"}
 
 
+def test_system_prompt_teaches_svp_methodology() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    planner.plan("system prompt test")
+
+    system_prompt = client.messages.calls[0]["system"]
+    assert "SVP is not merely a JSON schema" in system_prompt
+    assert "semantic control protocol" in system_prompt
+    assert "positive physical/visual states" in system_prompt
+    assert "Object/Contact Proposition Audit" in system_prompt
+    assert "Background Simplicity Policy" in system_prompt
+
+
 def test_plan_injects_duration() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -201,6 +215,223 @@ def test_character_lock_preserves_literal_subject_traits() -> None:
     )
     assert "clean background matching the SVP scene context" in (
         svp.reference_usage_policy.background_quality_rules
+    )
+
+
+def test_planner_adds_background_noise_controls_for_high_risk_prompt() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, transparent umbrella, katana at her waist, "
+        "wet reflections"
+    )
+
+    assert "background acts as smooth lighting support, not the subject" in (
+        svp.composition_layer.constraints.required
+    )
+    assert "background: sparse neon blocks instead of dense signage" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "dense signage" in svp.composition_layer.constraints.forbidden
+    assert "speckled light noise" in svp.style_layer.constraints.forbidden
+    assert "background simplicity has higher priority than background detail" in (
+        svp.c3.constraints.required
+    )
+    assert "main weapon is a single physical object" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "no weapon-like reflections in the background" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "broad smooth wet reflection bands" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
+def test_planner_background_risk_respects_negated_weapon_terms() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, transparent umbrella, no katana, no sword, "
+        "no blade, no weapon"
+    )
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+    assert "weapon-like reflections in the background" not in (
+        svp.composition_layer.constraints.forbidden
+    )
+
+
+def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("two characters in a rainy neon city with wet reflections")
+
+    assert "foreground: single character in sharp detail" not in (
+        svp.composition_layer.depth_layers
+    )
+    assert "foreground: requested subject(s) in sharp detail" in (
+        svp.composition_layer.depth_layers
+    )
+
+
+def test_planner_does_not_inject_neon_style_for_weapon_only_risk() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("single young adult woman with a katana in a quiet forest")
+
+    assert "neon atmosphere is carried by large clean light blocks" not in (
+        svp.style_layer.constraints.required
+    )
+    assert "main weapon is a single physical object" in (
+        svp.pose_layer.constraints.required
+    )
+
+
+def test_planner_does_not_add_character_contact_for_still_life_weapon() -> None:
+    client = DummyClient(responses=[VALID_STILL_LIFE_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("still life product shot of a katana on a wooden table")
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon stays attached to the specified hand, waist, or contact point" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+
+
+def test_planner_background_quality_rules_follow_risk_flags() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("single young adult woman with a katana in a quiet forest")
+
+    assert "broad smooth wet reflection bands" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "sparse soft neon blocks" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "background detail stays subordinate to character detail" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
+def test_planner_respects_explicit_detailed_city_background() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman in a detailed cityscape with readable neon signage"
+    )
+
+    assert "dense signage" not in svp.composition_layer.constraints.forbidden
+    assert "tiny readable text" not in svp.composition_layer.constraints.forbidden
+    assert "background: sparse neon blocks instead of dense signage" not in (
+        svp.composition_layer.depth_layers
+    )
+    assert "background detail remains organized and subordinate to the PoR" in (
+        svp.composition_layer.constraints.required
+    )
+
+
+def test_planner_resolves_umbrella_katana_contact_consistency() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, transparent umbrella, katana at her waist"
+    )
+
+    assert svp.pose_layer.hand_state == (
+        "one hand holds the umbrella handle; the other hand stays relaxed "
+        "near the waist; no hand holds the katana"
+    )
+    assert "one hand <-> umbrella handle" in svp.pose_layer.contact_points
+    assert "katana sheath <-> waist belt" in svp.pose_layer.contact_points
+    assert "one hand holds the umbrella handle" in svp.pose_layer.constraints.required
+    assert "katana is sheathed and attached to the waist belt" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "hands do not hold the katana while holding the umbrella" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "floating katana" in svp.pose_layer.constraints.forbidden
+    assert "unsheathed blade" in svp.pose_layer.constraints.forbidden
+    assert "drawn katana" in svp.pose_layer.constraints.forbidden
+    expected_contact_rule = (
+        "Object-contact proposition: one hand holds umbrella; "
+        "katana remains sheathed at waist"
+    )
+    assert expected_contact_rule in svp.c3.constraints.required
+    assert "both hands hold umbrella while katana appears unsheathed or floating" in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+    assert "umbrella count = exactly one" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "katana must be sheathed and attached to waist, not floating" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "katana may not be held if umbrella occupies a hand" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_allows_explicit_drawn_katana_with_umbrella() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman under a transparent umbrella holding a drawn katana"
+    )
+
+    assert svp.pose_layer.hand_state != (
+        "one hand holds the umbrella handle; the other hand stays relaxed "
+        "near the waist; no hand holds the katana"
+    )
+    assert "drawn katana" not in svp.pose_layer.constraints.forbidden
+    assert "katana may not be held if umbrella occupies a hand" not in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_does_not_force_umbrella_rules_without_umbrella() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, katana at her waist"
+    )
+
+    assert svp.pose_layer.hand_state != (
+        "one hand holds the umbrella handle; the other hand stays relaxed "
+        "near the waist; no hand holds the katana"
+    )
+    assert "one hand <-> umbrella handle" not in svp.pose_layer.contact_points
+    assert "umbrella count = exactly one" not in (
+        svp.reference_usage_policy.object_instance_rules
     )
 
 
