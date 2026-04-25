@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from svp_pipeline.schema import SVPVideo
+from svp_pipeline.schema.svp import ReferenceUsagePolicy
 
 # --------------------------------------------------------------------------- #
 # Sample-based validation
@@ -109,6 +110,13 @@ def test_minimal_valid_svp() -> None:
     svp = SVPVideo.model_validate(_minimal_svp_dict())
     assert svp.schema_version == "SVP.v4x-five-layer.video"
     assert svp.motion_layer.duration_seconds == 5
+
+
+def test_reference_policy_background_rules_are_scene_agnostic() -> None:
+    policy = ReferenceUsagePolicy()
+
+    assert "smooth neon bokeh" not in policy.background_quality_rules
+    assert all("neon" not in rule.lower() for rule in policy.background_quality_rules)
 
 
 # --------------------------------------------------------------------------- #

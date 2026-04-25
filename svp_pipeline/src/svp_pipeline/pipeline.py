@@ -470,18 +470,21 @@ class Pipeline:
         except ImportError as exc:  # pragma: no cover - dependency is declared in pyproject
             raise ValueError("Pillow is required for --reference-crop") from exc
 
-        with Image.open(source) as image:
-            width, height = image.size
-            col = (crop_index - 1) % 3
-            row = (crop_index - 1) // 3
-            left = col * width // 3
-            upper = row * height // 3
-            right = (col + 1) * width // 3 if col < 2 else width
-            lower = (row + 1) * height // 3 if row < 2 else height
-            cropped = image.crop((left, upper, right, lower)).convert("RGBA")
-            output = run_dir / f"reference_crop_{crop_index}.png"
-            cropped.save(output)
-            return output
+        try:
+            with Image.open(source) as image:
+                width, height = image.size
+                col = (crop_index - 1) % 3
+                row = (crop_index - 1) // 3
+                left = col * width // 3
+                upper = row * height // 3
+                right = (col + 1) * width // 3 if col < 2 else width
+                lower = (row + 1) * height // 3 if row < 2 else height
+                cropped = image.crop((left, upper, right, lower)).convert("RGBA")
+                output = run_dir / f"reference_crop_{crop_index}.png"
+                cropped.save(output)
+                return output
+        except OSError as exc:
+            raise ValueError(f"failed to crop reference image: {source}") from exc
 
     @staticmethod
     def _emit_progress(

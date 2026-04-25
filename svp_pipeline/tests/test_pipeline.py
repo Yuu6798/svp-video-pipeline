@@ -255,6 +255,18 @@ def test_pipeline_crops_reference_grid_before_image_backend(tmp_path: Path) -> N
     assert log_data["inputs"]["reference_crop"] == 5
 
 
+def test_reference_crop_invalid_image_raises_value_error(tmp_path: Path) -> None:
+    reference_image = tmp_path / "not_an_image.txt"
+    reference_image.write_text("not an image", encoding="utf-8")
+
+    try:
+        Pipeline._crop_reference_grid(source=reference_image, crop_index=1, run_dir=tmp_path)
+    except ValueError as exc:
+        assert "failed to crop reference image" in str(exc)
+    else:
+        raise AssertionError("expected invalid reference image crop to fail")
+
+
 def test_pipeline_openai_backend_records_backend_fields(tmp_path: Path) -> None:
     svp = _load("action_ninja.json")
     planner = FakePlanner(svp)

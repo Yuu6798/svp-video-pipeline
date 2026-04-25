@@ -212,7 +212,7 @@ class ReferenceUsagePolicy(BaseModel):
     background_quality_rules: list[str] = Field(
         default_factory=lambda: [
             "clean cinematic background",
-            "smooth neon bokeh",
+            "smooth distant background details",
             "reduced distant micro-line density",
             "no scratch-like line artifacts",
             "no compression-like speckles",
