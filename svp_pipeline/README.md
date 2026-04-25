@@ -1,121 +1,159 @@
 # SVP Video Pipeline
 
-## Overview
-（M5 で執筆）
+SVP Video Pipeline turns a natural-language prompt into a structured video
+prompt, a reference image, and an MP4 video.
+
+The pipeline is built around `SVP.v4x-five-layer.video`: a five-layer schema that
+keeps the semantic core of a scene explicit across planning, image generation,
+and reference-to-video generation. This makes each stage inspectable and
+repeatable instead of hiding the full creative brief inside one prompt string.
+
+The current implementation supports Claude for planning, Gemini or OpenAI for
+image generation, and Seedance 2.0 reference-to-video through fal.ai for video.
 
 ## Installation
-（M5 で執筆）
+
+Python 3.11 or newer is required.
+
+```bash
+git clone https://github.com/Yuu6798/svp-video-pipeline.git
+cd svp-video-pipeline/svp_pipeline
+pip install -e ".[dev]"
+```
+
+Configure API keys with environment variables or a local `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Required keys:
+
+| Key | Required when | Console |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Always, for the planner | https://console.anthropic.com/ |
+| `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `--image-backend gemini` | https://aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | `--image-backend openai` | https://platform.openai.com/api-keys |
+| `FAL_KEY` | Full video runs | https://fal.ai/dashboard/keys |
+
+Optional defaults:
+
+```bash
+DEFAULT_PLANNER_MODEL=claude-opus-4-7
+DEFAULT_IMAGE_BACKEND=gemini
+DEFAULT_OUTPUT_DIR=./out
+```
 
 ## Usage
-（M5 で執筆）
+
+```bash
+# Full run: Claude -> image -> Seedance video
+svp-video "夕暮れの渋谷で少女が傘を畳む"
+
+# Low-cost mode: Gemini 1K or OpenAI low, Seedance fast tier, 480p
+svp-video "朝の窓辺の白バラ" --cheap
+
+# OpenAI image backend
+svp-video "朝の窓辺の白バラ" --image-backend openai --cheap
+
+# SVP only
+svp-video "アクションシーン" --dry-run
+
+# Stop after image generation
+svp-video "静物のマクロ撮影" --no-video
+
+# Verbose JSON logs on stdout
+svp-video "雨の夜の路地" --verbose
+```
+
+### CLI Options
+
+| Option | Description | Default |
+|---|---|---|
+| `PROMPT` | Natural-language video prompt | Required |
+| `--duration INTEGER` | Video duration in seconds, 4-15 | `5` |
+| `--output PATH` | Output directory | `./out` |
+| `--planner-model TEXT` | `claude-opus-4-7` or `claude-haiku-4-5` | `claude-opus-4-7` |
+| `--image-backend TEXT` | `gemini` or `openai` | `gemini` |
+| `--cheap` | Low-cost image/video settings | Off |
+| `--dry-run` | Generate SVP only, with estimated downstream cost | Off |
+| `--no-video` | Generate SVP + image, skip video | Off |
+| `--verbose`, `-v` | Print verbose JSON logs and tracebacks | Off |
+| `--version` | Print package version | |
+| `--help` | Print CLI help | |
+
+Output is written to a timestamped directory:
+
+```text
+out/20260425-123456/
+  svp.json
+  image.png
+  video.mp4
+  log.json
+```
 
 ## Architecture
-（M5 で執筆）
+
+```text
+Natural language prompt
+        |
+        v
+Planner (Claude)
+        |
+        v
+SVP.v4x-five-layer.video JSON
+        |
+        v
+Image backend (Gemini or OpenAI)
+        |
+        v
+Reference PNG
+        |
+        v
+Seedance 2.0 reference-to-video
+        |
+        v
+MP4 video
+```
+
+The image prompt uses the composition, face, style, and pose layers. The motion
+prompt uses `motion_layer`, `por_core`, `grv_anchor`, and the motion-specific
+constraints, while referring to the generated image as `@Image1`.
 
 ## Known Limitations
-- M3 image backend is `gemini-3-pro-image-preview`.
-- OpenAI `gpt-image-2` backend is deferred until organization verification is available.
-- `auto` aspect ratio is mapped to `16:9` in M3 because Gemini image API does not accept `auto`.
-- M4 supports planner -> image -> video via Seedance r2v. Use `no_video=True` for image-only mode.
-- JSON-structured prompt sections are preserved to keep the same "JSON Supremacy" behavior observed in prior experiments.
+
+- Full video generation is paid. A typical 5-second standard run is roughly
+  `$1.6`; `--cheap` is roughly `$0.5`, depending on the selected image backend.
+- Seedance 2.0 currently supports 4-15 second videos.
+- Gemini supports the SVP aspect ratio values directly except `auto`, which is
+  resolved to `16:9`.
+- OpenAI `gpt-image-2` supports only three native sizes plus `auto`; `21:9` and
+  `4:3` are rounded to the nearest landscape size.
+- C-group visual risks such as reversed hands, thin linear objects, and
+  soft-body deformation still require manual observation.
+- The pipeline does not yet support batch mode, existing SVP JSON input, Web UI,
+  external object storage, or automated video Delta-E scoring.
 
 ## Development
-（M5 で執筆）
-
-## Manual Gemini Verification (M3)
-Run the following command locally after setting API keys:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export GOOGLE_API_KEY=...
-
-python -c "
-from pathlib import Path
-from svp_pipeline.pipeline import Pipeline
-
-p = Pipeline(
-    output_dir=Path('./out'),
-    planner_model='claude-haiku-4-5',
-)
-result = p.run(
-    '夕暮れの渋谷で少女が傘を畳む',
-    duration=5,
-    no_video=True,
-)
-print(f'Image saved: {result.image_path}')
-print(f'Total cost: ${result.total_cost_usd:.4f}')
-"
+pytest tests/ -v
+ruff check src/ tests/
 ```
 
-Recommended observation prompts:
-1. still_life case (no human subject)
-2. action_ninja case (`21:9`)
-3. shibuya_dusk case (urban portrait)
-4. interaction-bias suppression prompt
-5. forbidden enforcement prompt
-
-## Manual Seedance Verification (M4)
-Run the following commands locally after setting API keys:
+Focused test runs:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export GOOGLE_API_KEY=...
-export FAL_KEY=...
-
-# Full run (standard tier, 720p)
-python -c "
-from pathlib import Path
-from svp_pipeline.pipeline import Pipeline
-
-p = Pipeline(
-    output_dir=Path('./out'),
-    planner_model='claude-haiku-4-5',
-)
-result = p.run('夕暮れの渋谷で少女が傘を畳む', duration=5)
-print(f'Video saved: {result.video_path}')
-print(f'Total cost: ${result.total_cost_usd:.4f}')
-"
-
-# Cheap run (fast tier, 480p)
-python -c "
-from pathlib import Path
-from svp_pipeline.pipeline import Pipeline
-
-p = Pipeline(
-    output_dir=Path('./out'),
-    planner_model='claude-haiku-4-5',
-    cheap_mode=True,
-)
-result = p.run('夕暮れの渋谷で少女が傘を畳む', duration=5)
-print(f'Video saved: {result.video_path}')
-print(f'Total cost: ${result.total_cost_usd:.4f}')
-"
+pytest tests/test_cli.py
+pytest tests/test_image.py
+pytest tests/test_image_openai.py
+pytest tests/test_video.py
 ```
 
-## M3 Model Switch and Scope Note
-- M3 switched the image backend from OpenAI `gpt-image-2` to Gemini
-  `gemini-3-pro-image-preview`.
-- Reason: OpenAI organization verification was not available in the M3 timeline,
-  so `gpt-image-2` execution was blocked.
-- Scope impact: `gpt-image-2` forbidden-effect evaluation was removed from M3.
-  M3 verifies forbidden behavior on Gemini only.
-- `gpt-image-2` parity checks are deferred to a future milestone after OpenAI
-  org verification is available.
+Manual smoke tests:
 
-## M3 Forbidden Observation Snapshot (Gemini, 2026-04-23)
-Output directory:
-`out/m3-observation-20260423-122838/` (5 samples, model=`gemini-3-pro-image-preview`)
-
-- `still_life_macro`: no human subject observed. Forbidden intent was respected.
-- `action_ninja_21_9`: PoR elements were present (`21:9`, moon/roof/silhouette);
-  no explicit forbidden violation observed.
-- `shibuya_dusk`: baseline composition matched expected anchors
-  (subject + rain reflection + crowd context).
-- `interaction_bias_suppression`: sword-present but non-combat posture generated;
-  attack-motion forbiddens were respected.
-- `forbidden_smile`: neutral expression generated; no obvious smile/grin observed.
-
-Notes:
-- This snapshot is qualitative (manual visual inspection), not a scored benchmark.
-- C-group risk items (reverse grip, linear-object handling edge cases, soft-body
-  edge cases) are deferred to M4 for re-evaluation.
+```bash
+svp-video "テストプロンプト" --dry-run
+svp-video "テストプロンプト" --no-video --cheap
+svp-video "テストプロンプト" --cheap
+```

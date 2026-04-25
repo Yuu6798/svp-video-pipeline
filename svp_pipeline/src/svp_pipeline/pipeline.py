@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .exceptions import VideoDownloadError
-from .generator.image import ImageGenerator, ImageResolution
+from .generator.image import ImageBackend, ImageBackendName, create_image_backend
+from .generator.image_gemini import GeminiImageBackend
+from .generator.image_openai import OpenAIImageBackend
 from .generator.planner import Planner, PlannerModel
 from .generator.video import VideoGenerator, VideoResolution
 from .schema import SVPVideo
+from .utils.logging import write_log_json
+
+ProgressCallback = Callable[[str, dict[str, Any]], None]
 
 
 @dataclass
@@ -40,10 +45,11 @@ class Pipeline:
         output_dir: Path,
         planner_model: PlannerModel = "claude-opus-4-7",
         image_model: str = "gemini-3-pro-image-preview",
+        image_backend: ImageBackendName | str = "gemini",
         cheap_mode: bool = False,
         dry_run: bool = False,
         planner: Planner | None = None,
-        image_generator: ImageGenerator | None = None,
+        image_generator: ImageBackend | None = None,
         video_generator: VideoGenerator | None = None,
     ) -> None:
         self.output_dir = Path(output_dir)
@@ -51,9 +57,11 @@ class Pipeline:
 
         self.planner_model = planner_model
         self.image_model = image_model
+        self.image_backend = image_backend
+        self._validate_image_backend()
         self.cheap_mode = cheap_mode
         self.dry_run = dry_run
-        self.image_resolution: ImageResolution = "1K" if cheap_mode else "2K"
+        self.image_quality_mode = "cheap" if cheap_mode else "normal"
         self.video_tier = "fast" if cheap_mode else "standard"
         self.video_resolution: VideoResolution = "480p" if cheap_mode else "720p"
 
@@ -66,10 +74,12 @@ class Pipeline:
         user_prompt: str,
         duration: int | None = None,
         no_video: bool = False,
+        progress_callback: ProgressCallback | None = None,
     ) -> PipelineResult:
         total_started = time.perf_counter()
         run_dir = self._make_timestamp_dir()
 
+        self._emit_progress(progress_callback, "planner_start", {"model": self.planner_model})
         planner_started = time.perf_counter()
         svp = self._planner.plan(user_prompt=user_prompt, duration=duration)
         planner_elapsed = time.perf_counter() - planner_started
@@ -84,6 +94,15 @@ class Pipeline:
             "cost_usd": self.PLANNER_ESTIMATED_COST_USD,
             "model": planner_model_for_log,
         }
+        self._emit_progress(
+            progress_callback,
+            "planner_done",
+            {
+                "elapsed_sec": planner_elapsed,
+                "cost_usd": self.PLANNER_ESTIMATED_COST_USD,
+                "model": planner_model_for_log,
+            },
+        )
 
         image_path: Path | None = None
         video_path: Path | None = None
@@ -91,20 +110,13 @@ class Pipeline:
         video_generator: VideoGenerator | None = None
         total_cost = self.PLANNER_ESTIMATED_COST_USD
         if self.dry_run:
-            estimated_image_cost = ImageGenerator.COST_PER_IMAGE_USD[self.image_resolution]
-            resolved_aspect = ImageGenerator.ASPECT_FALLBACK.get(
-                svp.composition_layer.aspect_ratio,
-                svp.composition_layer.aspect_ratio,
-            )
+            image_estimate = self._estimate_image_stage(svp)
             image_stage = {
                 "status": "skipped_dry_run",
                 "elapsed_sec": 0.0,
-                "estimated_cost_usd": estimated_image_cost,
-                "model": self.image_model,
-                "resolution": self.image_resolution,
-                "aspect_ratio": resolved_aspect,
+                **image_estimate,
             }
-            total_cost += estimated_image_cost
+            total_cost += image_estimate["estimated_cost_usd"]
             if not no_video:
                 estimated_video_cost = VideoGenerator.PRICE_PER_SECOND[
                     (self.video_tier, self.video_resolution)
@@ -136,20 +148,41 @@ class Pipeline:
 
             generator = self._image_generator
             if generator is None:
-                generator = ImageGenerator(model=self.image_model)
+                generator = create_image_backend(
+                    backend=self.image_backend,
+                    model=self.image_model,
+                )
                 self._image_generator = generator
-            image_result = generator.generate(svp=svp, resolution=self.image_resolution)
+
+            self._emit_progress(
+                progress_callback,
+                "image_start",
+                {"backend": self.image_backend, "quality_mode": self.image_quality_mode},
+            )
+            image_result = generator.generate(svp=svp, quality_mode=self.image_quality_mode)
             image_path = run_dir / "image.png"
             image_path.write_bytes(image_result.png_bytes)
             image_stage = {
                 "status": "ok",
                 "elapsed_sec": image_result.elapsed_sec,
                 "cost_usd": image_result.cost_usd,
+                "backend": image_result.backend,
                 "model": image_result.model,
-                "resolution": image_result.resolution,
                 "aspect_ratio": image_result.aspect_ratio,
+                "native_size_or_resolution": image_result.native_size_or_resolution,
+                "was_aspect_coerced": image_result.was_aspect_coerced,
             }
             total_cost += image_result.cost_usd
+            self._emit_progress(
+                progress_callback,
+                "image_done",
+                {
+                    "elapsed_sec": image_result.elapsed_sec,
+                    "cost_usd": image_result.cost_usd,
+                    "backend": image_result.backend,
+                    "model": image_result.model,
+                },
+            )
 
             if not no_video:
                 assert video_generator is not None
@@ -160,6 +193,15 @@ class Pipeline:
                     else VideoGenerator.ENDPOINT_STANDARD
                 )
                 output_video_path = run_dir / "video.mp4"
+                self._emit_progress(
+                    progress_callback,
+                    "video_start",
+                    {
+                        "tier": video_generator.tier,
+                        "resolution": self.video_resolution,
+                        "duration": svp.motion_layer.duration_seconds,
+                    },
+                )
                 try:
                     video_result = video_generator.generate(
                         svp=svp,
@@ -202,6 +244,16 @@ class Pipeline:
                         "fal_request_id": video_result.fal_request_id,
                         "mp4_url": video_result.mp4_url,
                     }
+                    self._emit_progress(
+                        progress_callback,
+                        "video_done",
+                        {
+                            "elapsed_sec": video_result.elapsed_sec,
+                            "cost_usd": video_result.cost_usd,
+                            "tier": video_result.tier,
+                            "resolution": video_result.resolution,
+                        },
+                    )
 
         total_elapsed = time.perf_counter() - total_started
         stages: dict[str, Any] = {
@@ -224,7 +276,7 @@ class Pipeline:
         }
 
         log_path = run_dir / "log.json"
-        log_path.write_text(json.dumps(log_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_log_json(log_path, log_data)
 
         return PipelineResult(
             output_dir=run_dir,
@@ -257,3 +309,44 @@ class Pipeline:
             return requested_model
 
         return self.planner_model
+
+    def _estimate_image_stage(self, svp: SVPVideo) -> dict[str, Any]:
+        aspect_ratio = svp.composition_layer.aspect_ratio
+        if self.image_backend == "openai":
+            size = OpenAIImageBackend.ASPECT_TO_SIZE.get(aspect_ratio)
+            if size is None:
+                raise ValueError(f"unsupported aspect ratio for openai backend: {aspect_ratio!r}")
+            was_coerced = aspect_ratio not in OpenAIImageBackend._DIRECT_COMPATIBLE_ASPECTS
+            quality = OpenAIImageBackend.QUALITY_MAP[self.image_quality_mode]
+            return {
+                "estimated_cost_usd": OpenAIImageBackend.COST_PER_IMAGE_USD[(size, quality)],
+                "backend": "openai",
+                "model": OpenAIImageBackend.MODEL_ID,
+                "aspect_ratio": aspect_ratio,
+                "native_size_or_resolution": size,
+                "was_aspect_coerced": was_coerced,
+            }
+
+        resolved_aspect = GeminiImageBackend.ASPECT_FALLBACK.get(aspect_ratio, aspect_ratio)
+        resolution = GeminiImageBackend.QUALITY_TO_RESOLUTION[self.image_quality_mode]
+        return {
+            "estimated_cost_usd": GeminiImageBackend.COST_PER_IMAGE_USD[resolution],
+            "backend": "gemini",
+            "model": self.image_model,
+            "aspect_ratio": resolved_aspect,
+            "native_size_or_resolution": resolution,
+            "was_aspect_coerced": False,
+        }
+
+    def _validate_image_backend(self) -> None:
+        if self.image_backend not in ("gemini", "openai"):
+            raise ValueError(f"Unknown image backend: {self.image_backend!r}")
+
+    @staticmethod
+    def _emit_progress(
+        progress_callback: ProgressCallback | None,
+        event: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if progress_callback is not None:
+            progress_callback(event, payload)

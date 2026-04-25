@@ -38,16 +38,18 @@ class FakeImageGenerator:
     def __init__(self) -> None:
         self.calls: list[tuple[SVPVideo, str]] = []
 
-    def generate(self, svp: SVPVideo, resolution: str = "2K") -> ImageResult:
-        self.calls.append((svp, resolution))
+    def generate(self, svp: SVPVideo, quality_mode: str = "normal") -> ImageResult:
+        self.calls.append((svp, quality_mode))
         return ImageResult(
             png_bytes=TINY_PNG_BYTES,
-            cost_usd=0.08 if resolution == "2K" else 0.04,
+            cost_usd=0.08 if quality_mode == "normal" else 0.04,
             elapsed_sec=0.12,
             raw_prompt="prompt",
             model="gemini-3-pro-image-preview",
-            resolution=resolution,  # type: ignore[arg-type]
+            backend="gemini",
             aspect_ratio="16:9",
+            native_size_or_resolution="2K" if quality_mode == "normal" else "1K",
+            was_aspect_coerced=False,
         )
 
 
@@ -105,6 +107,8 @@ def test_log_json_format(tmp_path: Path) -> None:
     assert "planner" in log_data["stages"]
     assert "image" in log_data["stages"]
     assert "video" not in log_data["stages"]
+    assert log_data["stages"]["image"]["backend"] == "gemini"
+    assert log_data["stages"]["image"]["native_size_or_resolution"] == "2K"
     assert "total_cost_usd" in log_data
     assert "total_elapsed_sec" in log_data
     assert log_data["outputs"]["svp"] == "svp.json"
@@ -175,6 +179,7 @@ def test_dry_run_log_records_estimated_cost(tmp_path: Path) -> None:
     log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
 
     assert log_data["stages"]["image"]["status"] == "skipped_dry_run"
+    assert log_data["stages"]["image"]["backend"] == "gemini"
     assert log_data["stages"]["image"]["estimated_cost_usd"] > 0
 
 
@@ -192,4 +197,40 @@ def test_cheap_mode_uses_1k_resolution(tmp_path: Path) -> None:
     pipeline.run("cheap mode prompt", no_video=True)
 
     assert len(image.calls) == 1
-    assert image.calls[0][1] == "1K"
+    assert image.calls[0][1] == "cheap"
+
+
+def test_pipeline_openai_backend_records_backend_fields(tmp_path: Path) -> None:
+    svp = _load("action_ninja.json")
+    planner = FakePlanner(svp)
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        image_backend="openai",
+        dry_run=True,
+        planner=planner,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("openai dry run prompt", no_video=True)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert log_data["stages"]["image"]["backend"] == "openai"
+    assert log_data["stages"]["image"]["model"] == "gpt-image-2"
+    assert log_data["stages"]["image"]["native_size_or_resolution"] == "1536x1024"
+    assert log_data["stages"]["image"]["was_aspect_coerced"] is True
+
+
+def test_pipeline_rejects_unknown_image_backend(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    planner = FakePlanner(svp)
+
+    try:
+        Pipeline(
+            output_dir=tmp_path,
+            image_backend="gemnii",
+            dry_run=True,
+            planner=planner,  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        assert "Unknown image backend" in str(exc)
+    else:
+        raise AssertionError("expected invalid image backend to fail")
