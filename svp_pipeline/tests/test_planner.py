@@ -235,6 +235,22 @@ def test_character_lock_ignores_negated_identity_traits() -> None:
     assert "katana" not in svp.c3.evaluation_criteria.hit_list
 
 
+def test_character_lock_ignores_negated_japanese_identity_traits() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("単独の若い女性、銀髪ポニーテール、赤い瞳ではない、刀は不要")
+
+    assert "female character" in svp.identity_locks
+    assert "silver-gray high ponytail" in svp.identity_locks
+    assert "赤い瞳" not in svp.identity_locks
+    assert "red eyes" not in svp.identity_locks
+    assert "刀" not in svp.identity_locks
+    assert "katana" not in svp.identity_locks
+    assert "赤い瞳" not in svp.face_layer.constraints.required
+    assert "katana" not in svp.c3.evaluation_criteria.hit_list
+
+
 def test_character_lock_can_be_disabled() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client, character_lock=False)

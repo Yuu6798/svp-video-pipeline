@@ -432,6 +432,35 @@ def _contains_unnegated(pattern: str, lower_prompt: str) -> bool:
     return _find_unnegated_match(pattern, lower_prompt) is not None
 
 
+def _contains_unnegated_literal(prompt: str, literal: str) -> bool:
+    start = 0
+    while True:
+        index = prompt.find(literal, start)
+        if index < 0:
+            return False
+        end = index + len(literal)
+        if not _has_negation_context(prompt, index, end):
+            return True
+        start = end
+
+
+def _has_negation_context(prompt: str, start: int, end: int) -> bool:
+    if _has_negation_prefix(prompt.lower(), start):
+        return True
+
+    prefix = re.split(r"[,;:.、。()（）]", prompt[max(0, start - 16) : start])[-1]
+    suffix = re.split(r"[,;:.、。()（）]", prompt[end : end + 16], maxsplit=1)[0]
+    japanese_negation_after = (
+        r"^.{0,4}(?:ではない|じゃない|でない|ではなく|じゃなく|でなく|"
+        r"不要|なし|無し|ない|持たない|含めない|避ける|除外|禁止)"
+    )
+    japanese_negation_before = r"(?:不要な|不要の|禁止の|禁止された|避けるべき)$"
+    return bool(
+        re.search(japanese_negation_after, suffix)
+        or re.search(japanese_negation_before, prefix)
+    )
+
+
 def _has_negation_prefix(lower_prompt: str, start: int) -> bool:
     window = lower_prompt[max(0, start - 60) : start]
     negation_pattern = (
@@ -489,16 +518,22 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
         "刀",
     ]
     for marker in japanese_markers:
-        if marker in prompt:
+        if _contains_unnegated_literal(prompt, marker):
             locks.append(marker)
 
-    has_silver = _contains_unnegated(r"\bsilver\b", lower) or "銀" in prompt
-    has_ponytail = _contains_unnegated(r"\bponytail\b", lower) or "ポニーテール" in prompt
+    has_silver = _contains_unnegated(r"\bsilver\b", lower) or _contains_unnegated_literal(
+        prompt, "銀"
+    )
+    has_ponytail = _contains_unnegated(
+        r"\bponytail\b", lower
+    ) or _contains_unnegated_literal(prompt, "ポニーテール")
     if has_silver and has_ponytail:
         locks.append("silver-gray high ponytail")
 
     has_red_eyes = (
-        _contains_unnegated(r"\bred eyes?\b", lower) or "赤い瞳" in prompt or "赤目" in prompt
+        _contains_unnegated(r"\bred eyes?\b", lower)
+        or _contains_unnegated_literal(prompt, "赤い瞳")
+        or _contains_unnegated_literal(prompt, "赤目")
     )
     if has_red_eyes:
         locks.append("red eyes")
@@ -506,13 +541,17 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
     has_female_subject = (
         _contains_unnegated(r"\bwoman\b", lower)
         or _contains_unnegated(r"\bfemale\b", lower)
-        or "女性" in prompt
-        or "少女" in prompt
+        or _contains_unnegated_literal(prompt, "女性")
+        or _contains_unnegated_literal(prompt, "少女")
     )
     if has_female_subject:
         locks.append("female character")
 
-    if _contains_unnegated(r"\bkatana\b", lower) or "刀" in prompt or "日本刀" in prompt:
+    if (
+        _contains_unnegated(r"\bkatana\b", lower)
+        or _contains_unnegated_literal(prompt, "刀")
+        or _contains_unnegated_literal(prompt, "日本刀")
+    ):
         locks.append("katana")
 
     return _append_unique([], locks)
