@@ -79,6 +79,7 @@ class Planner:
             if self.character_lock:
                 svp = self._apply_character_locks(svp=svp, user_prompt=user_prompt)
             svp = self._apply_background_noise_controls(svp=svp, user_prompt=user_prompt)
+            svp = self._apply_object_contact_audit(svp=svp, user_prompt=user_prompt)
             svp = self._enforce_requested_duration(svp=svp, duration=duration)
             return svp
 
@@ -560,6 +561,152 @@ class Planner:
             }
         )
 
+    def _apply_object_contact_audit(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
+        object_flags = _detect_object_contact_risk(user_prompt)
+        if not {"umbrella", "katana"}.issubset(object_flags):
+            return svp
+
+        pose_required = _append_unique(
+            list(svp.pose_layer.constraints.required),
+            [
+                "one hand holds the umbrella handle",
+                "the other hand stays relaxed near the waist",
+                "katana is sheathed and attached to the waist belt",
+                "only the katana hilt and sheath may be visible",
+                "hands do not hold the katana while holding the umbrella",
+            ],
+        )
+        pose_forbidden = _append_unique(
+            list(svp.pose_layer.constraints.forbidden),
+            [
+                "floating katana",
+                "unsheathed blade",
+                "drawn katana",
+                "katana held while both hands hold umbrella",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        pose_contact_points = _append_unique(
+            list(svp.pose_layer.contact_points),
+            [
+                "one hand <-> umbrella handle",
+                "katana sheath <-> waist belt",
+            ],
+        )
+        pose_constraints = svp.pose_layer.constraints.model_copy(
+            update={"required": pose_required, "forbidden": pose_forbidden}
+        )
+        pose_layer = svp.pose_layer.model_copy(
+            update={
+                "hand_state": (
+                    "one hand holds the umbrella handle; the other hand stays relaxed "
+                    "near the waist; no hand holds the katana"
+                ),
+                "contact_points": pose_contact_points,
+                "constraints": pose_constraints,
+            }
+        )
+
+        composition_required = _append_unique(
+            list(svp.composition_layer.constraints.required),
+            [
+                "umbrella and katana use separate non-conflicting contact points",
+                "katana remains fixed to the waist belt while the umbrella is held",
+            ],
+        )
+        composition_forbidden = _append_unique(
+            list(svp.composition_layer.constraints.forbidden),
+            [
+                "floating katana",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        composition_constraints = svp.composition_layer.constraints.model_copy(
+            update={
+                "required": composition_required,
+                "forbidden": composition_forbidden,
+            }
+        )
+        composition_layer = svp.composition_layer.model_copy(
+            update={"constraints": composition_constraints}
+        )
+
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            [
+                (
+                    "Object-contact proposition: one hand holds umbrella; "
+                    "katana remains sheathed at waist"
+                ),
+                "no extra sword-like object may appear outside the waist sheath",
+            ],
+        )
+        global_forbidden = _append_unique(
+            list(svp.c3.constraints.forbidden),
+            [
+                "floating katana",
+                "unsheathed blade",
+                "drawn katana",
+                "katana held while both hands hold umbrella",
+                "extra sword",
+                "sword-like background reflection",
+            ],
+        )
+        global_constraints = svp.c3.constraints.model_copy(
+            update={"required": global_required, "forbidden": global_forbidden}
+        )
+        critical_fail_conditions = _append_unique(
+            list(svp.c3.evaluation_criteria.critical_fail_conditions),
+            [
+                "katana floats away from waist sheath",
+                "both hands hold umbrella while katana appears unsheathed or floating",
+                "background produces sword-like reflections or extra blades",
+            ],
+        )
+        evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
+            update={"critical_fail_conditions": critical_fail_conditions}
+        )
+        c3 = svp.c3.model_copy(
+            update={
+                "constraints": global_constraints,
+                "evaluation_criteria": evaluation_criteria,
+            }
+        )
+
+        reference_usage_policy = svp.reference_usage_policy.model_copy(
+            update={
+                "object_instance_rules": _append_unique(
+                    list(svp.reference_usage_policy.object_instance_rules),
+                    [
+                        "umbrella count = exactly one",
+                        "katana count = exactly one",
+                        "katana must be sheathed and attached to waist, not floating",
+                        "katana may not be held if umbrella occupies a hand",
+                        "no sword-like background reflection",
+                    ],
+                ),
+                "do_not_copy_from_reference": _append_unique(
+                    list(svp.reference_usage_policy.do_not_copy_from_reference),
+                    [
+                        "floating swords from reference background",
+                        "drawn blade pose unless explicitly requested",
+                        "duplicate weapon silhouettes",
+                    ],
+                ),
+            }
+        )
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
 
 def _load_system_prompt() -> str:
     return (
@@ -649,6 +796,19 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
         lower_prompt,
     ):
         flags.add("explicit_noise_control")
+
+    return flags
+
+
+def _detect_object_contact_risk(user_prompt: str) -> set[str]:
+    prompt = " ".join(user_prompt.replace(";", ",").split())
+    lower = prompt.lower()
+    flags: set[str] = set()
+
+    if _contains_unnegated(r"\b(?:umbrella|parasol)\b", lower):
+        flags.add("umbrella")
+    if _contains_unnegated(r"\b(?:katana|sword|blade)\b", lower):
+        flags.add("katana")
 
     return flags
 

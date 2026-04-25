@@ -123,6 +123,7 @@ def test_system_prompt_teaches_svp_methodology() -> None:
     assert "SVP is not merely a JSON schema" in system_prompt
     assert "semantic control protocol" in system_prompt
     assert "positive physical/visual states" in system_prompt
+    assert "Object/Contact Proposition Audit" in system_prompt
     assert "Background Simplicity Policy" in system_prompt
 
 
@@ -249,6 +250,69 @@ def test_planner_adds_background_noise_controls_for_high_risk_prompt() -> None:
     )
     assert "broad smooth wet reflection bands" in (
         svp.reference_usage_policy.background_quality_rules
+    )
+
+
+def test_planner_resolves_umbrella_katana_contact_consistency() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, transparent umbrella, katana at her waist"
+    )
+
+    assert svp.pose_layer.hand_state == (
+        "one hand holds the umbrella handle; the other hand stays relaxed "
+        "near the waist; no hand holds the katana"
+    )
+    assert "one hand <-> umbrella handle" in svp.pose_layer.contact_points
+    assert "katana sheath <-> waist belt" in svp.pose_layer.contact_points
+    assert "one hand holds the umbrella handle" in svp.pose_layer.constraints.required
+    assert "katana is sheathed and attached to the waist belt" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "hands do not hold the katana while holding the umbrella" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "floating katana" in svp.pose_layer.constraints.forbidden
+    assert "unsheathed blade" in svp.pose_layer.constraints.forbidden
+    assert "drawn katana" in svp.pose_layer.constraints.forbidden
+    expected_contact_rule = (
+        "Object-contact proposition: one hand holds umbrella; "
+        "katana remains sheathed at waist"
+    )
+    assert expected_contact_rule in svp.c3.constraints.required
+    assert "both hands hold umbrella while katana appears unsheathed or floating" in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+    assert "umbrella count = exactly one" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "katana must be sheathed and attached to waist, not floating" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "katana may not be held if umbrella occupies a hand" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_does_not_force_umbrella_rules_without_umbrella() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, single young adult woman with silver-gray "
+        "high ponytail, vivid red eyes, katana at her waist"
+    )
+
+    assert svp.pose_layer.hand_state != (
+        "one hand holds the umbrella handle; the other hand stays relaxed "
+        "near the waist; no hand holds the katana"
+    )
+    assert "one hand <-> umbrella handle" not in svp.pose_layer.contact_points
+    assert "umbrella count = exactly one" not in (
+        svp.reference_usage_policy.object_instance_rules
     )
 
 

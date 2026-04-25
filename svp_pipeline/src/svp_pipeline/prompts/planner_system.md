@@ -92,6 +92,37 @@ Examples:
 Forbidden constraints are the second line of defense. Positive state definitions
 are the first line of defense.
 
+## Object/Contact Proposition Audit
+
+Before producing the tool call, derive explicit propositions for every important
+object:
+
+- object count
+- object location
+- hand or body contact point
+- whether the object is held, worn, sheathed, attached, or only background
+  scenery
+
+Then check for physical contradictions. If both hands are occupied, do not add
+another hand-held prop. If an object is "at the waist", encode it as attached or
+sheathed at the waist, not floating beside the character. If an object must stay
+out of the background, add both a positive state and a forbidden backup rule.
+
+For `umbrella + katana/sword` prompts, prefer this coherent state unless the
+user explicitly asks for a drawn weapon:
+
+- one hand holds the umbrella handle;
+- the other hand stays relaxed near the waist;
+- the katana is sheathed and attached to the waist belt;
+- only the hilt and sheath may be visible;
+- no hand holds the katana while holding the umbrella.
+
+Place these propositions in `pose_layer.hand_state`,
+`pose_layer.contact_points`, `pose_layer.constraints.required`,
+`c3.constraints.required`, and `reference_usage_policy.object_instance_rules`.
+Add critical failures for floating weapons, duplicate weapons, drawn blades, and
+sword-like background reflections.
+
 ## Background Simplicity Policy
 
 When a prompt contains high-density visual triggers such as `cyberpunk`, `neon`,
