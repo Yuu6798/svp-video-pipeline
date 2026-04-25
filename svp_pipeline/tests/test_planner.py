@@ -190,6 +190,15 @@ def test_character_lock_preserves_literal_subject_traits() -> None:
     assert "hair color or hairstyle changes" in (
         svp.c3.evaluation_criteria.critical_fail_conditions
     )
+    assert "clean cinematic neon city background" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "smooth neon bokeh in distant signs" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "clean background matching the SVP scene context" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
 
 
 def test_character_lock_can_be_disabled() -> None:

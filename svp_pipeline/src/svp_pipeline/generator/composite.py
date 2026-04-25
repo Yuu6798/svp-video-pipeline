@@ -236,7 +236,11 @@ def _render_background_prompt(svp: SVPVideo) -> str:
     colors = ", ".join(svp.color_axis)
     textures = ", ".join(svp.texture_axis)
     depth_layers = _join_lines(svp.composition_layer.depth_layers)
-    required = _join_lines(svp.composition_layer.constraints.required + svp.c3.constraints.required)
+    required = _join_lines(
+        _background_only_items(
+            svp.composition_layer.constraints.required + svp.c3.constraints.required
+        )
+    )
     forbidden = _join_lines(
         [
             *svp.composition_layer.constraints.forbidden,
@@ -273,6 +277,47 @@ No text, logo, or watermark.
 
 def _join_lines(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items if item)
+
+
+def _background_only_items(items: list[str]) -> list[str]:
+    """Keep only constraints that are safe to send to a background-only prompt."""
+    return [item for item in items if item.strip() and not _looks_subject_related(item)]
+
+
+def _looks_subject_related(item: str) -> bool:
+    text = item.strip().lower()
+    subject_tokens = (
+        "person",
+        "people",
+        "character",
+        "subject",
+        "human",
+        "woman",
+        "man",
+        "girl",
+        "boy",
+        "face",
+        "eye",
+        "hair",
+        "ponytail",
+        "outfit",
+        "clothing",
+        "kimono",
+        "coat",
+        "dress",
+        "body",
+        "hand",
+        "waist",
+        "pose",
+        "katana",
+        "sword",
+        "weapon",
+        "prop",
+        "single",
+        "duplicate",
+        "extra",
+    )
+    return any(token in text for token in subject_tokens)
 
 
 def _build_reference_file(reference_image_path: Path) -> tuple[str, bytes, str]:

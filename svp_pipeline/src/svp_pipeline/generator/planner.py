@@ -338,9 +338,9 @@ class Planner:
                 "background_quality_rules": _append_unique(
                     list(svp.reference_usage_policy.background_quality_rules),
                     [
-                        "clean cinematic neon city background",
-                        "smooth neon bokeh in distant signs",
-                        "reduced micro-line density in distant buildings",
+                        "clean background matching the SVP scene context",
+                        "smooth distant background details",
+                        "reduced background micro-line density",
                         "no gritty texture noise",
                         "no scratch-like artifacts",
                         "no compression-like speckles",
