@@ -30,8 +30,10 @@ class DummyOpenAIClient:
         self.images = MagicMock()
         if error is not None:
             self.images.generate.side_effect = error
+            self.images.edit.side_effect = error
         else:
             self.images.generate.return_value = response
+            self.images.edit.return_value = response
 
 
 def _with_aspect(svp: SVPVideo, aspect: str) -> SVPVideo:
@@ -146,6 +148,30 @@ def test_b64_decoded_to_bytes() -> None:
     result = backend.generate(svp=svp, quality_mode="normal")
 
     assert result.png_bytes == TINY_PNG_BYTES
+
+
+def test_reference_image_uses_edit_endpoint(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    backend = OpenAIImageBackend(client=client)
+
+    result = backend.generate(
+        svp=svp,
+        quality_mode="cheap",
+        reference_image_path=reference,
+    )
+
+    assert result.png_bytes == TINY_PNG_BYTES
+    client.images.generate.assert_not_called()
+    client.images.edit.assert_called_once()
+    kwargs = client.images.edit.call_args.kwargs
+    assert kwargs["image"] == ("reference.png", TINY_PNG_BYTES, "image/png")
+    assert "Reference Image Usage Policy" in kwargs["prompt"]
+    assert "extra swords or weapon trails" in kwargs["prompt"]
+    assert "Object instance rules" in kwargs["prompt"]
+    assert "Background quality rules" in kwargs["prompt"]
 
 
 def test_image_result_backend_field() -> None:

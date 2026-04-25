@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import mimetypes
 import os
 import time
 import warnings
+from pathlib import Path
 from typing import Any, Literal
 
 try:
@@ -19,7 +21,7 @@ except ImportError:  # pragma: no cover - covered by dependency install in CI
 
 from ..exceptions import ImageAPIError, ImageRefusalError
 from ..schema import SVPVideo
-from ..utils.prompt_render import render_image_prompt
+from ..utils.prompt_render import append_reference_usage_policy, render_image_prompt
 from .image_base import ImageResult
 
 OpenAIQuality = Literal["low", "medium", "high", "auto"]
@@ -84,13 +86,21 @@ class OpenAIImageBackend:
         self,
         svp: SVPVideo,
         quality_mode: str = "normal",
+        reference_image_path: Path | None = None,
     ) -> ImageResult:
         if quality_mode not in self.QUALITY_MAP:
             raise ValueError(f"unsupported quality mode: {quality_mode}")
 
         prompt = render_image_prompt(svp)
+        if reference_image_path is not None:
+            prompt = append_reference_usage_policy(prompt=prompt, svp=svp)
         size, was_coerced = self._resolve_size(svp.composition_layer.aspect_ratio)
         quality = self.QUALITY_MAP[quality_mode]
+        reference_file = (
+            self._build_reference_file(reference_image_path)
+            if reference_image_path is not None
+            else None
+        )
         if was_coerced:
             warnings.warn(
                 (
@@ -103,14 +113,25 @@ class OpenAIImageBackend:
 
         started = time.perf_counter()
         try:
-            response = self._client.images.generate(
-                model=self.model,
-                prompt=prompt,
-                size=size,
-                quality=quality,
-                n=1,
-                output_format="png",
-            )
+            if reference_image_path is None:
+                response = self._client.images.generate(
+                    model=self.model,
+                    prompt=prompt,
+                    size=size,
+                    quality=quality,
+                    n=1,
+                    output_format="png",
+                )
+            else:
+                response = self._client.images.edit(
+                    model=self.model,
+                    image=reference_file,
+                    prompt=prompt,
+                    size=size,
+                    quality=quality,
+                    n=1,
+                    output_format="png",
+                )
         except OpenAIError as exc:
             if self._is_content_policy_error(exc):
                 raise ImageRefusalError(
@@ -145,6 +166,14 @@ class OpenAIImageBackend:
             raise ValueError(f"unsupported aspect ratio for openai backend: {svp_aspect_ratio!r}")
         was_coerced = svp_aspect_ratio not in self._DIRECT_COMPATIBLE_ASPECTS
         return size, was_coerced
+
+    @staticmethod
+    def _build_reference_file(reference_image_path: Path) -> tuple[str, bytes, str]:
+        path = Path(reference_image_path)
+        if not path.exists():
+            raise ValueError(f"reference image not found: {path}")
+        mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        return (path.name, path.read_bytes(), mime_type)
 
     @staticmethod
     def _extract_png_bytes(response: Any) -> bytes:

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import mimetypes
 import os
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 from google import genai
@@ -12,7 +14,7 @@ from google.genai import types
 
 from ..exceptions import ImageAPIError, ImageRefusalError
 from ..schema import SVPVideo
-from ..utils.prompt_render import render_image_prompt
+from ..utils.prompt_render import append_reference_usage_policy, render_image_prompt
 from .image_base import ImageResult
 
 GeminiResolution = Literal["1K", "2K", "4K"]
@@ -57,6 +59,7 @@ class GeminiImageBackend:
         svp: SVPVideo,
         quality_mode: str = "normal",
         resolution: GeminiResolution | None = None,
+        reference_image_path: Path | None = None,
     ) -> ImageResult:
         if quality_mode not in self.QUALITY_TO_RESOLUTION:
             raise ValueError(f"unsupported quality mode: {quality_mode}")
@@ -66,12 +69,15 @@ class GeminiImageBackend:
             raise ValueError(f"unsupported resolution: {resolution}")
 
         prompt = render_image_prompt(svp)
+        if reference_image_path is not None:
+            prompt = append_reference_usage_policy(prompt=prompt, svp=svp)
+        contents = self._build_contents(prompt, reference_image_path)
         resolved_aspect = self._resolve_aspect_ratio(svp.composition_layer.aspect_ratio)
         started = time.perf_counter()
         try:
             response = self._client.models.generate_content(
                 model=self.model,
-                contents=prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(
                     response_modalities=[types.Modality.IMAGE],
                     image_config=types.ImageConfig(
@@ -101,6 +107,19 @@ class GeminiImageBackend:
 
     def _resolve_aspect_ratio(self, svp_aspect_ratio: str) -> str:
         return self.ASPECT_FALLBACK.get(svp_aspect_ratio, svp_aspect_ratio)
+
+    def _build_contents(self, prompt: str, reference_image_path: Path | None) -> Any:
+        if reference_image_path is None:
+            return prompt
+
+        path = Path(reference_image_path)
+        if not path.exists():
+            raise ValueError(f"reference image not found: {path}")
+        mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        return [
+            prompt,
+            types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type),
+        ]
 
     def _extract_png_bytes(self, response: Any) -> bytes:
         prompt_feedback = getattr(response, "prompt_feedback", None)

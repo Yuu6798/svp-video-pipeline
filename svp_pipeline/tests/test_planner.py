@@ -168,6 +168,39 @@ def test_forbidden_injection_preserves_others() -> None:
         assert item in forbidden
 
 
+def test_character_lock_preserves_literal_subject_traits() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "cyberpunk rainy neon city, young adult woman with silver-gray high "
+        "ponytail, vivid red eyes, black and indigo floral kimono coat, "
+        "katana at her waist"
+    )
+
+    assert "young adult woman" in svp.identity_locks
+    assert "silver-gray high ponytail" in svp.identity_locks
+    assert "vivid red eyes" in svp.identity_locks
+    assert "black and indigo floral kimono coat" in svp.identity_locks
+    assert "katana at her waist" in svp.identity_locks
+    assert "young adult woman" in svp.face_layer.constraints.required
+    assert "wrong hair color" in svp.face_layer.constraints.forbidden
+    assert "extra characters" in svp.composition_layer.constraints.forbidden
+    assert "silver-gray high ponytail" in svp.c3.evaluation_criteria.hit_list
+    assert "hair color or hairstyle changes" in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
+def test_character_lock_can_be_disabled() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client, character_lock=False)
+
+    svp = planner.plan("young adult woman with silver-gray high ponytail and vivid red eyes")
+
+    assert svp.identity_locks == []
+
+
 def test_pydantic_validation_error_triggers_retry() -> None:
     client = DummyClient(responses=[TOO_FEW_POR_CORE_RESPONSE, VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)

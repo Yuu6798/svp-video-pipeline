@@ -63,6 +63,7 @@ def _collect_forbidden(svp: SVPVideo) -> list[str]:
     merged.extend(svp.style_layer.constraints.forbidden)
     merged.extend(svp.pose_layer.constraints.forbidden)
     merged.extend(svp.c3.constraints.forbidden)
+    merged.extend(svp.c3.evaluation_criteria.critical_fail_conditions)
     return _dedupe_keep_order(merged)
 
 
@@ -123,6 +124,23 @@ def render_image_prompt(svp: SVPVideo) -> str:
         "## Essence (PoR)",
         f"This image is defined by: {por_core_text}. Without these, the image is not that image.",
         "",
+    ]
+
+    if svp.identity_locks:
+        lines.extend(
+            [
+                "## Identity Lock",
+                (
+                    "Preserve these subject-defining details exactly. Do not generalize, "
+                    "swap, or reinterpret them:"
+                ),
+                *(f"- {item}" for item in svp.identity_locks),
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
         "## Subject Identity",
         svp.por_identity,
         "",
@@ -159,10 +177,22 @@ def render_image_prompt(svp: SVPVideo) -> str:
         svp.c3.context,
         "",
         "## Consistency Rules",
-    ]
+        ]
+    )
 
     if svp.c3.consistency:
         lines.extend(f"- {item}" for item in svp.c3.consistency)
+    else:
+        lines.append("- None")
+
+    lines.extend(
+        [
+            "",
+            "## Evaluation Hit List",
+        ]
+    )
+    if svp.c3.evaluation_criteria.hit_list:
+        lines.extend(f"- {item}" for item in svp.c3.evaluation_criteria.hit_list)
     else:
         lines.append("- None")
 
@@ -184,6 +214,39 @@ def render_image_prompt(svp: SVPVideo) -> str:
             f"Avoid: {avoid_text}",
         ]
     )
+    return "\n".join(lines).strip()
+
+
+def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
+    """Append instructions that constrain how optional reference images are used."""
+    policy = svp.reference_usage_policy
+    lines = [
+        prompt.strip(),
+        "",
+        "## Reference Image Usage Policy",
+        (
+            "If a reference image is provided, use it only for these character "
+            "identity details:"
+        ),
+        *(f"- {item}" for item in policy.use_reference_for),
+        "",
+        "Do not copy these elements from the reference image:",
+        *(f"- {item}" for item in policy.do_not_copy_from_reference),
+        "",
+        f"Background source: {policy.background_source}.",
+        f"Identity transfer strength: {policy.identity_strength}.",
+        f"Scene/background transfer strength: {policy.scene_transfer_strength}.",
+        "",
+        "Object instance rules:",
+        *(f"- {item}" for item in policy.object_instance_rules),
+        "",
+        "Background quality rules:",
+        *(f"- {item}" for item in policy.background_quality_rules),
+        (
+            "Generate a single final image, not a collage, contact sheet, "
+            "split panel, or numbered panel layout."
+        ),
+    ]
     return "\n".join(lines).strip()
 
 

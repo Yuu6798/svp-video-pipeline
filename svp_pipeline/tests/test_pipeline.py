@@ -36,10 +36,15 @@ class FakePlannerWithEffectiveModel(FakePlanner):
 
 class FakeImageGenerator:
     def __init__(self) -> None:
-        self.calls: list[tuple[SVPVideo, str]] = []
+        self.calls: list[tuple[SVPVideo, str, Path | None]] = []
 
-    def generate(self, svp: SVPVideo, quality_mode: str = "normal") -> ImageResult:
-        self.calls.append((svp, quality_mode))
+    def generate(
+        self,
+        svp: SVPVideo,
+        quality_mode: str = "normal",
+        reference_image_path: Path | None = None,
+    ) -> ImageResult:
+        self.calls.append((svp, quality_mode, reference_image_path))
         return ImageResult(
             png_bytes=TINY_PNG_BYTES,
             cost_usd=0.08 if quality_mode == "normal" else 0.04,
@@ -198,6 +203,56 @@ def test_cheap_mode_uses_1k_resolution(tmp_path: Path) -> None:
 
     assert len(image.calls) == 1
     assert image.calls[0][1] == "cheap"
+
+
+def test_pipeline_passes_reference_image_to_image_backend(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    reference_image = tmp_path / "reference.png"
+    reference_image.write_bytes(TINY_PNG_BYTES)
+    planner = FakePlanner(svp)
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("reference prompt", no_video=True, reference_image_path=reference_image)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert len(image.calls) == 1
+    assert image.calls[0][2] == reference_image
+    assert log_data["inputs"]["reference_image"] == str(reference_image)
+
+
+def test_pipeline_crops_reference_grid_before_image_backend(tmp_path: Path) -> None:
+    from PIL import Image
+
+    svp = _load("shibuya_dusk.json")
+    reference_image = tmp_path / "reference_grid.png"
+    Image.new("RGB", (300, 300), "white").save(reference_image)
+    planner = FakePlanner(svp)
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run(
+        "reference crop prompt",
+        no_video=True,
+        reference_image_path=reference_image,
+        reference_crop=5,
+    )
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+    effective_reference = Path(log_data["inputs"]["effective_reference_image"])
+
+    assert len(image.calls) == 1
+    assert image.calls[0][2] == effective_reference
+    assert effective_reference.name == "reference_crop_5.png"
+    assert effective_reference.exists()
+    assert log_data["inputs"]["reference_crop"] == 5
 
 
 def test_pipeline_openai_backend_records_backend_fields(tmp_path: Path) -> None:
