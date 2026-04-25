@@ -81,6 +81,11 @@ def main(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Generate SVP only."),
     no_video: bool = typer.Option(False, "--no-video", help="Generate image only, no video."),
+    archive_drive: bool = typer.Option(
+        False,
+        "--archive-drive",
+        help="Archive generated image/video artifacts to Google Drive after success.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Print verbose JSON logs."),
     version: bool = typer.Option(
         False,
@@ -135,7 +140,13 @@ def main(
         if logger is not None:
             logger.info("pipeline_completed", extra={"extra_data": _result_payload(result)})
         _print_summary(result, dry_run=dry_run, no_video=no_video)
-    except (SVPPipelineError, ValueError) as exc:
+        if archive_drive:
+            if dry_run:
+                console.print("\n[yellow]--archive-drive skipped for --dry-run.[/yellow]")
+            else:
+                archive_result = _archive_outputs_to_drive(result)
+                _print_archive_summary(archive_result)
+    except (SVPPipelineError, ValueError, RuntimeError) as exc:
         _handle_error(exc, verbose=verbose)
         raise typer.Exit(1) from exc
     except KeyboardInterrupt:
@@ -289,6 +300,44 @@ def _print_summary(result: PipelineResult, dry_run: bool, no_video: bool) -> Non
     for path in (result.svp_path, result.image_path, result.video_path, result.log_path):
         if path is not None and path.exists():
             console.print(f"  {path.name:<10} {_format_size(path.stat().st_size):>9}")
+
+
+def _archive_outputs_to_drive(result: PipelineResult) -> Any:
+    try:
+        from .tools.archive_to_drive import archive_run
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            'Drive archive dependencies are missing. Install them with: pip install -e ".[drive]"'
+        ) from exc
+
+    console.print("\nArchiving outputs to Google Drive...")
+    try:
+        with console.status("[bold]Uploading artifacts to Google Drive...[/bold]"):
+            return archive_run(result.output_dir)
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            'Drive archive dependencies are missing. Install them with: pip install -e ".[drive]"'
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Archive to Drive failed: {exc}. Local outputs remain at: {result.output_dir}"
+        ) from exc
+
+
+def _print_archive_summary(archive_result: Any) -> None:
+    if archive_result.already_archived:
+        console.print("Drive archive: already archived; nothing to upload.")
+    elif archive_result.uploaded_files:
+        console.print(f"Drive archive: uploaded {len(archive_result.uploaded_files)} file(s).")
+        for key, url in archive_result.uploaded_files.items():
+            console.print(f"  {key}: {url}")
+    else:
+        console.print("Drive archive: no new files to upload.")
+
+    if archive_result.skipped_files:
+        console.print(f"Drive archive skipped: {', '.join(archive_result.skipped_files)}")
+    console.print(f"Drive folder: {archive_result.drive_folder_url}")
+    console.print(f"Updated log: {archive_result.log_path}")
 
 
 def _print_cost_lines(log_data: dict[str, Any]) -> None:
