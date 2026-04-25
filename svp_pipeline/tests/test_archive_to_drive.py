@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import tools.archive_to_drive as archive_mod
+import svp_pipeline.tools.archive_to_drive as archive_mod
 from tests.fixtures.mock_drive import (
     MockDriveService,
     patch_authenticate,

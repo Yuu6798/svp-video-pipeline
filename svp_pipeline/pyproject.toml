@@ -39,7 +39,7 @@ drive = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/svp_pipeline", "tools"]
+packages = ["src/svp_pipeline"]
 
 [tool.ruff]
 line-length = 100
