@@ -250,14 +250,24 @@ class Planner:
             update={"constraints": composition_constraints}
         )
 
+        has_female_lock = "female character" in locks
+        has_male_lock = "male character" in locks
+
         global_required = _append_unique(list(svp.c3.constraints.required), locks)
         global_forbidden_additions = [
             "collage, contact sheet, split panel, or numbered panel layout",
         ]
         if single_subject_intent:
+            if has_female_lock:
+                global_forbidden_additions.append(
+                    "male character if a female character was specified"
+                )
+            if has_male_lock:
+                global_forbidden_additions.append(
+                    "female character if a male character was specified"
+                )
             global_forbidden_additions.extend(
                 [
-                    "male character if a female character was specified",
                     "extra characters",
                     "duplicated background character",
                 ]
@@ -516,6 +526,11 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
         r"\bfemale\b",
         r"\bwoman\b",
         r"\bgirl\b",
+        r"young adult man",
+        r"young man",
+        r"\bmale\b",
+        r"\bman\b",
+        r"\bboy\b",
         r"silver[- ]gray high ponytail",
         r"silver[- ]gray ponytail",
         r"silver high ponytail",
@@ -538,6 +553,9 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
         "若い成人女性",
         "女性",
         "少女",
+        "若い成人男性",
+        "男性",
+        "少年",
         "銀灰色",
         "銀髪",
         "ポニーテール",
@@ -579,6 +597,16 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
     )
     if has_female_subject:
         locks.append("female character")
+
+    has_male_subject = (
+        _contains_unnegated(r"\bman\b", lower)
+        or _contains_unnegated(r"\bmale\b", lower)
+        or _contains_unnegated(r"\bboy\b", lower)
+        or _contains_unnegated_literal(prompt, "男性")
+        or _contains_unnegated_literal(prompt, "少年")
+    )
+    if has_male_subject:
+        locks.append("male character")
 
     if (
         _contains_unnegated(r"\bkatana\b", lower)
