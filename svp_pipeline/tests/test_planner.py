@@ -201,6 +201,40 @@ def test_character_lock_preserves_literal_subject_traits() -> None:
     )
 
 
+def test_character_lock_does_not_force_single_subject_for_multi_subject_prompt() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "two characters: a young adult woman with silver-gray high ponytail "
+        "and red eyes, and another young adult woman with black hair"
+    )
+
+    assert "red eyes" in svp.identity_locks
+    assert "single primary character only" not in svp.composition_layer.constraints.required
+    assert "extra characters" not in svp.composition_layer.constraints.forbidden
+    assert "extra characters" not in svp.c3.constraints.forbidden
+    assert "extra or duplicated characters appear" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
+def test_character_lock_ignores_negated_identity_traits() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with silver-gray high ponytail, no red eyes, "
+        "without katana"
+    )
+
+    assert "silver-gray high ponytail" in svp.identity_locks
+    assert "red eyes" not in svp.identity_locks
+    assert "katana" not in svp.identity_locks
+    assert "red eyes" not in svp.face_layer.constraints.required
+    assert "katana" not in svp.c3.evaluation_criteria.hit_list
+
+
 def test_character_lock_can_be_disabled() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client, character_lock=False)

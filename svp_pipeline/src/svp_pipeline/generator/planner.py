@@ -203,6 +203,7 @@ class Planner:
         if not locks:
             return svp
 
+        single_subject_intent = _prompt_indicates_single_subject(user_prompt)
         identity_locks = _append_unique(list(svp.identity_locks), locks)
 
         face_required = _append_unique(list(svp.face_layer.constraints.required), locks)
@@ -229,11 +230,18 @@ class Planner:
 
         composition_required = _append_unique(
             list(svp.composition_layer.constraints.required),
-            ["single primary character only", *locks],
+            (
+                ["single primary character only", *locks]
+                if single_subject_intent
+                else locks
+            ),
         )
+        composition_forbidden_additions = ["collage layout", "multi-panel grid"]
+        if single_subject_intent:
+            composition_forbidden_additions.extend(["extra characters", "duplicate character"])
         composition_forbidden = _append_unique(
             list(svp.composition_layer.constraints.forbidden),
-            ["extra characters", "duplicate character", "collage layout", "multi-panel grid"],
+            composition_forbidden_additions,
         )
         composition_constraints = svp.composition_layer.constraints.model_copy(
             update={"required": composition_required, "forbidden": composition_forbidden}
@@ -243,29 +251,37 @@ class Planner:
         )
 
         global_required = _append_unique(list(svp.c3.constraints.required), locks)
+        global_forbidden_additions = [
+            "collage, contact sheet, split panel, or numbered panel layout",
+        ]
+        if single_subject_intent:
+            global_forbidden_additions.extend(
+                [
+                    "male character if a female character was specified",
+                    "extra characters",
+                    "duplicated background character",
+                ]
+            )
         global_forbidden = _append_unique(
             list(svp.c3.constraints.forbidden),
-            [
-                "male character if a female character was specified",
-                "extra characters",
-                "duplicated background character",
-                "collage, contact sheet, split panel, or numbered panel layout",
-            ],
+            global_forbidden_additions,
         )
         global_constraints = svp.c3.constraints.model_copy(
             update={"required": global_required, "forbidden": global_forbidden}
         )
 
         hit_list = _append_unique(list(svp.c3.evaluation_criteria.hit_list), locks)
+        critical_fail_additions = [
+            "subject gender changes",
+            "hair color or hairstyle changes",
+            "eye color changes",
+            "outfit identity changes",
+        ]
+        if single_subject_intent:
+            critical_fail_additions.append("extra or duplicated characters appear")
         critical_fail_conditions = _append_unique(
             list(svp.c3.evaluation_criteria.critical_fail_conditions),
-            [
-                "subject gender changes",
-                "hair color or hairstyle changes",
-                "eye color changes",
-                "outfit identity changes",
-                "extra or duplicated characters appear",
-            ],
+            critical_fail_additions,
         )
         evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
             update={
@@ -383,6 +399,49 @@ def _append_unique(existing: list[str], additions: list[str]) -> list[str]:
     return out
 
 
+def _prompt_indicates_single_subject(user_prompt: str) -> bool:
+    lower = " ".join(user_prompt.lower().replace(";", ",").split())
+    multi_subject_patterns = [
+        r"\b(?:two|three|four|multiple|several)\s+(?:\w+\s+){0,2}"
+        r"(?:people|persons|characters|women|girls|men|boys|subjects)\b",
+        r"\b(?:pair|duo|couple|group|crowd|team|twins)\b",
+        r"\b(?:woman|girl|man|boy|person|character)\s+and\s+"
+        r"(?:woman|girl|man|boy|person|character)\b",
+        r"\bwith\s+another\s+(?:person|character|woman|girl|man|boy)\b",
+    ]
+    if any(re.search(pattern, lower) for pattern in multi_subject_patterns):
+        return False
+
+    single_subject_patterns = [
+        r"\b(?:a|one|single|solo|lone)\s+(?:young\s+adult\s+)?"
+        r"(?:woman|girl|man|boy|person|character|subject)\b",
+        r"\b(?:young adult woman|young woman|female character|woman|girl)\b",
+        r"\b(?:young adult man|young man|male character|man|boy)\b",
+    ]
+    return any(re.search(pattern, lower) for pattern in single_subject_patterns)
+
+
+def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:
+    for match in re.finditer(pattern, lower_prompt):
+        if not _has_negation_prefix(lower_prompt, match.start()):
+            return match
+    return None
+
+
+def _contains_unnegated(pattern: str, lower_prompt: str) -> bool:
+    return _find_unnegated_match(pattern, lower_prompt) is not None
+
+
+def _has_negation_prefix(lower_prompt: str, start: int) -> bool:
+    window = lower_prompt[max(0, start - 60) : start]
+    negation_pattern = (
+        r"(?:^|[\s,;:.()])"
+        r"(?:no|not|without|avoid|exclude|excluding|never)\s+"
+        r"(?:\w+\s+){0,3}$"
+    )
+    return re.search(negation_pattern, window) is not None
+
+
 def _extract_identity_locks(user_prompt: str) -> list[str]:
     """Extract literal subject traits that must survive Claude's SVP abstraction."""
     prompt = " ".join(user_prompt.replace(";", ",").split())
@@ -409,7 +468,7 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
         r"\bkatana\b",
     ]
     for pattern in phrase_patterns:
-        match = re.search(pattern, lower)
+        match = _find_unnegated_match(pattern, lower)
         if match:
             locks.append(prompt[match.start() : match.end()])
 
@@ -433,13 +492,27 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
         if marker in prompt:
             locks.append(marker)
 
-    if ("silver" in lower or "銀" in prompt) and ("ponytail" in lower or "ポニーテール" in prompt):
+    has_silver = _contains_unnegated(r"\bsilver\b", lower) or "銀" in prompt
+    has_ponytail = _contains_unnegated(r"\bponytail\b", lower) or "ポニーテール" in prompt
+    if has_silver and has_ponytail:
         locks.append("silver-gray high ponytail")
-    if ("red eyes" in lower or "red eye" in lower or "赤い瞳" in prompt or "赤目" in prompt):
+
+    has_red_eyes = (
+        _contains_unnegated(r"\bred eyes?\b", lower) or "赤い瞳" in prompt or "赤目" in prompt
+    )
+    if has_red_eyes:
         locks.append("red eyes")
-    if ("woman" in lower or "female" in lower or "女性" in prompt or "少女" in prompt):
+
+    has_female_subject = (
+        _contains_unnegated(r"\bwoman\b", lower)
+        or _contains_unnegated(r"\bfemale\b", lower)
+        or "女性" in prompt
+        or "少女" in prompt
+    )
+    if has_female_subject:
         locks.append("female character")
-    if "katana" in lower or "刀" in prompt or "日本刀" in prompt:
+
+    if _contains_unnegated(r"\bkatana\b", lower) or "刀" in prompt or "日本刀" in prompt:
         locks.append("katana")
 
     return _append_unique([], locks)
