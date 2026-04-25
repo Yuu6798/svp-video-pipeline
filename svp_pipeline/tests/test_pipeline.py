@@ -274,6 +274,57 @@ def test_pipeline_openai_backend_records_backend_fields(tmp_path: Path) -> None:
     assert log_data["stages"]["image"]["was_aspect_coerced"] is True
 
 
+def test_dry_run_split_composite_estimates_double_openai_cost(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    reference_image = tmp_path / "reference.png"
+    reference_image.write_bytes(TINY_PNG_BYTES)
+    planner = FakePlanner(svp)
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        image_backend="openai",
+        cheap_mode=True,
+        dry_run=True,
+        planner=planner,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run(
+        "split dry run prompt",
+        no_video=True,
+        reference_image_path=reference_image,
+        separate_character_bg=True,
+    )
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert log_data["inputs"]["separate_character_bg"] is True
+    assert log_data["stages"]["image"]["backend"] == "openai-split-composite"
+    assert log_data["stages"]["image"]["estimated_cost_usd"] == 0.032
+
+
+def test_dry_run_split_composite_requires_openai_backend(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    reference_image = tmp_path / "reference.png"
+    reference_image.write_bytes(TINY_PNG_BYTES)
+    planner = FakePlanner(svp)
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        image_backend="gemini",
+        dry_run=True,
+        planner=planner,  # type: ignore[arg-type]
+    )
+
+    try:
+        pipeline.run(
+            "split dry run prompt",
+            no_video=True,
+            reference_image_path=reference_image,
+            separate_character_bg=True,
+        )
+    except ValueError as exc:
+        assert "requires image_backend='openai'" in str(exc)
+    else:
+        raise AssertionError("expected split composite with gemini backend to fail")
+
+
 def test_pipeline_rejects_unknown_image_backend(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
     planner = FakePlanner(svp)

@@ -227,7 +227,7 @@ Background must be flat pure chroma key green (#00FF00), evenly lit.
 No city, no neon signs, no rain, no background texture, no shadows baked into the green area.
 Exactly one main weapon/prop if specified. No duplicated blade reflections.
 No text, logo, watermark, numbered panels, collage grid, or extra characters.
-Keep clean edges suitable for compositing over a cyberpunk rainy neon city background.
+Keep clean edges suitable for compositing over the requested background plate.
 """
 
 
@@ -235,14 +235,36 @@ def _render_background_prompt(svp: SVPVideo) -> str:
     context = svp.c3.context
     colors = ", ".join(svp.color_axis)
     textures = ", ".join(svp.texture_axis)
+    depth_layers = _join_lines(svp.composition_layer.depth_layers)
+    required = _join_lines(svp.composition_layer.constraints.required + svp.c3.constraints.required)
+    forbidden = _join_lines(
+        [
+            *svp.composition_layer.constraints.forbidden,
+            *svp.c3.constraints.forbidden,
+            "people",
+            "characters",
+            "faces",
+            "bodies",
+            "swords",
+            "katana",
+            "weapon-like silhouettes",
+        ]
+    )
     return f"""Create a clean anime background plate for compositing.
 Scene context: {context}
 Style: {svp.style_family} / {svp.style_pack or "default"}
 Colors: {colors}
 Textures: {textures}
+Depth layers:
+{depth_layers}
 
-No people, no characters, no faces, no bodies, no swords, no katana, no weapon-like silhouettes.
-Wet street reflections, magenta and cyan neon bokeh, deep perspective, cinematic clean background.
+Required background elements:
+{required}
+
+Do not include:
+{forbidden}
+
+Follow the scene context and required background elements above.
 Smooth distant details, reduced micro-line density.
 No gritty texture noise, no scratch-like artifacts, no compression speckles.
 No text, logo, or watermark.

@@ -93,6 +93,10 @@ class Pipeline:
             reference_crop=reference_crop,
             run_dir=run_dir,
         )
+        self._validate_separate_character_bg(
+            separate_character_bg=separate_character_bg,
+            effective_reference_image_path=effective_reference_image_path,
+        )
 
         self._emit_progress(progress_callback, "planner_start", {"model": self.planner_model})
         planner_started = time.perf_counter()
@@ -125,7 +129,10 @@ class Pipeline:
         video_generator: VideoGenerator | None = None
         total_cost = self.PLANNER_ESTIMATED_COST_USD
         if self.dry_run:
-            image_estimate = self._estimate_image_stage(svp)
+            image_estimate = self._estimate_image_stage(
+                svp,
+                separate_character_bg=separate_character_bg,
+            )
             image_stage = {
                 "status": "skipped_dry_run",
                 "elapsed_sec": 0.0,
@@ -162,12 +169,6 @@ class Pipeline:
                     self._video_generator = video_generator
 
             if separate_character_bg:
-                if self.image_backend != "openai":
-                    raise ValueError(
-                        "--separate-character-bg currently requires image_backend='openai'"
-                    )
-                if effective_reference_image_path is None:
-                    raise ValueError("--separate-character-bg requires a reference image")
                 generator = SplitCompositeImageGenerator()
             else:
                 generator = self._image_generator
@@ -375,8 +376,30 @@ class Pipeline:
 
         return self.planner_model
 
-    def _estimate_image_stage(self, svp: SVPVideo) -> dict[str, Any]:
+    def _estimate_image_stage(
+        self,
+        svp: SVPVideo,
+        separate_character_bg: bool = False,
+    ) -> dict[str, Any]:
         aspect_ratio = svp.composition_layer.aspect_ratio
+        if separate_character_bg:
+            size = OpenAIImageBackend.ASPECT_TO_SIZE.get(aspect_ratio)
+            if size is None:
+                raise ValueError(f"unsupported aspect ratio for openai backend: {aspect_ratio!r}")
+            was_coerced = aspect_ratio not in OpenAIImageBackend._DIRECT_COMPATIBLE_ASPECTS
+            quality = OpenAIImageBackend.QUALITY_MAP[self.image_quality_mode]
+            return {
+                "estimated_cost_usd": OpenAIImageBackend.COST_PER_IMAGE_USD[
+                    (size, quality)
+                ]
+                * 2,
+                "backend": "openai-split-composite",
+                "model": OpenAIImageBackend.MODEL_ID,
+                "aspect_ratio": aspect_ratio,
+                "native_size_or_resolution": size,
+                "was_aspect_coerced": was_coerced,
+            }
+
         if self.image_backend == "openai":
             size = OpenAIImageBackend.ASPECT_TO_SIZE.get(aspect_ratio)
             if size is None:
@@ -406,6 +429,18 @@ class Pipeline:
     def _validate_image_backend(self) -> None:
         if self.image_backend not in ("gemini", "openai"):
             raise ValueError(f"Unknown image backend: {self.image_backend!r}")
+
+    def _validate_separate_character_bg(
+        self,
+        separate_character_bg: bool,
+        effective_reference_image_path: Path | None,
+    ) -> None:
+        if not separate_character_bg:
+            return
+        if self.image_backend != "openai":
+            raise ValueError("--separate-character-bg currently requires image_backend='openai'")
+        if effective_reference_image_path is None:
+            raise ValueError("--separate-character-bg requires a reference image")
 
     def _prepare_reference_image(
         self,
