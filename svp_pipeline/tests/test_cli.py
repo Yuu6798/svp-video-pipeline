@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,16 @@ from tests.fixtures.mock_gemini import TINY_PNG_BYTES
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
 runner = CliRunner()
+
+# Rich/Typer の help 出力には端末判定によって ANSI 制御コードが挿入される
+# ことがあり、`--duration` のようなトークンが raw output 上で連続文字列として
+# 存在しなくなる。部分文字列マッチを行う前にこの正規表現で剥がして、
+# 環境（ローカル/CI/TERM=dumb 等）依存性を排除する。
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _load(name: str) -> SVPVideo:
@@ -138,6 +149,7 @@ def _reset_fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_help_shows_all_options() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
+    output = _strip_ansi(result.output)
     for option in (
         "--duration",
         "--output",
@@ -153,7 +165,7 @@ def test_help_shows_all_options() -> None:
         "--verbose",
         "--version",
     ):
-        assert option in result.output
+        assert option in output
 
 
 def test_version_flag() -> None:
