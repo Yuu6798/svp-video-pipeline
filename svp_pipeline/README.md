@@ -223,3 +223,18 @@ svp-video "テストプロンプト" --dry-run
 svp-video "テストプロンプト" --no-video --cheap
 svp-video "テストプロンプト" --cheap
 ```
+
+## Archive to Google Drive
+
+Optional helper for archiving generated image / video artifacts to a personal
+Google Drive folder.
+
+```bash
+pip install -e ".[drive]"
+# Create an OAuth Desktop client in Google Cloud Console and save credentials as:
+# ~/.config/svp-pipeline/google-credentials.json
+
+python -m svp_pipeline.tools.archive_to_drive out/20260425-140453
+```
+
+See `python -m svp_pipeline.tools.archive_to_drive --help` for options.

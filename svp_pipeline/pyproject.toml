@@ -32,9 +32,14 @@ dev = [
     "ruff>=0.4",
     "pytest-mock>=3.12",
 ]
+drive = [
+    "google-api-python-client>=2.120",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/svp_pipeline"]
+packages = ["src/svp_pipeline", "tools"]
 
 [tool.ruff]
 line-length = 100
