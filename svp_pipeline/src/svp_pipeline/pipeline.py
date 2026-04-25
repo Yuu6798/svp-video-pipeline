@@ -58,6 +58,7 @@ class Pipeline:
         self.planner_model = planner_model
         self.image_model = image_model
         self.image_backend = image_backend
+        self._validate_image_backend()
         self.cheap_mode = cheap_mode
         self.dry_run = dry_run
         self.image_quality_mode = "cheap" if cheap_mode else "normal"
@@ -147,7 +148,10 @@ class Pipeline:
 
             generator = self._image_generator
             if generator is None:
-                generator = create_image_backend(backend=self.image_backend)
+                generator = create_image_backend(
+                    backend=self.image_backend,
+                    model=self.image_model,
+                )
                 self._image_generator = generator
 
             self._emit_progress(
@@ -333,6 +337,10 @@ class Pipeline:
             "native_size_or_resolution": resolution,
             "was_aspect_coerced": False,
         }
+
+    def _validate_image_backend(self) -> None:
+        if self.image_backend not in ("gemini", "openai"):
+            raise ValueError(f"Unknown image backend: {self.image_backend!r}")
 
     @staticmethod
     def _emit_progress(

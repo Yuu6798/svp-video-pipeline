@@ -217,3 +217,20 @@ def test_pipeline_openai_backend_records_backend_fields(tmp_path: Path) -> None:
     assert log_data["stages"]["image"]["model"] == "gpt-image-2"
     assert log_data["stages"]["image"]["native_size_or_resolution"] == "1536x1024"
     assert log_data["stages"]["image"]["was_aspect_coerced"] is True
+
+
+def test_pipeline_rejects_unknown_image_backend(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    planner = FakePlanner(svp)
+
+    try:
+        Pipeline(
+            output_dir=tmp_path,
+            image_backend="gemnii",
+            dry_run=True,
+            planner=planner,  # type: ignore[arg-type]
+        )
+    except ValueError as exc:
+        assert "Unknown image backend" in str(exc)
+    else:
+        raise AssertionError("expected invalid image backend to fail")

@@ -14,11 +14,12 @@ ImageResolution = GeminiResolution
 
 def create_image_backend(
     backend: ImageBackendName | str = "gemini",
+    model: str | None = None,
     api_key: str | None = None,
 ) -> ImageBackend:
     """Create image backend instance by backend name."""
     if backend == "gemini":
-        return GeminiImageBackend(api_key=api_key)
+        return GeminiImageBackend(model=model or GeminiImageBackend.MODEL_ID, api_key=api_key)
     if backend == "openai":
         return OpenAIImageBackend(api_key=api_key)
     raise ValueError(f"Unknown image backend: {backend!r}")

@@ -15,6 +15,16 @@ def test_create_gemini_backend() -> None:
     assert backend.BACKEND_NAME == "gemini"
 
 
+def test_create_gemini_backend_honors_model() -> None:
+    backend = create_image_backend(
+        backend="gemini",
+        model="gemini-3-pro-image-preview",
+        api_key="dummy",
+    )
+    assert isinstance(backend, GeminiImageBackend)
+    assert backend.model == "gemini-3-pro-image-preview"
+
+
 def test_create_openai_backend() -> None:
     backend = create_image_backend(backend="openai", api_key="dummy")
     assert isinstance(backend, OpenAIImageBackend)
