@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -285,38 +286,20 @@ def _background_only_items(items: list[str]) -> list[str]:
 
 def _looks_subject_related(item: str) -> bool:
     text = item.strip().lower()
-    subject_tokens = (
-        "person",
-        "people",
-        "character",
-        "subject",
-        "human",
-        "woman",
-        "man",
-        "girl",
-        "boy",
-        "face",
-        "eye",
-        "hair",
-        "ponytail",
-        "outfit",
-        "clothing",
-        "kimono",
-        "coat",
-        "dress",
-        "body",
-        "hand",
-        "waist",
-        "pose",
-        "katana",
-        "sword",
-        "weapon",
-        "prop",
-        "single",
-        "duplicate",
-        "extra",
+    subject_patterns = (
+        r"\b(?:person|people|character|characters|subject|subjects|human|humans)\b",
+        r"\b(?:woman|women|man|men|girl|girls|boy|boys)\b",
+        r"\bfaces?\b",
+        r"\beyes?\b(?!-)",
+        r"\bhair\b",
+        r"\bponytails?\b",
+        r"\b(?:outfits?|clothing|kimonos?|coats?|dresses?)\b",
+        r"\b(?:body|bodies|hands?|waist|poses?)\b",
+        r"\b(?:katana|swords?|weapons?|props?)\b",
+        r"\bsingle(?:\s+\w+){0,2}\s+(?:person|character|subject|human)\b",
+        r"\b(?:duplicate|duplicated|extra)\s+(?:person|people|characters?|subjects?|humans?)\b",
     )
-    return any(token in text for token in subject_tokens)
+    return any(re.search(pattern, text) for pattern in subject_patterns)
 
 
 def _build_reference_file(reference_image_path: Path) -> tuple[str, bytes, str]:

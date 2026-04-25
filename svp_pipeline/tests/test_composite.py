@@ -74,3 +74,33 @@ def test_background_prompt_filters_subject_required_constraints() -> None:
     assert "silver-gray high ponytail" not in prompt
     assert "vivid red eyes" not in prompt
     assert "black and indigo floral kimono coat" not in prompt
+
+
+def test_background_prompt_keeps_scene_words_that_contain_subject_tokens() -> None:
+    svp = _load("shibuya_dusk.json")
+    composition_constraints = svp.composition_layer.constraints.model_copy(
+        update={
+            "required": [
+                "Manhattan skyline",
+                "single moon over the avenue",
+                "extra-wide avenue",
+                "single primary character only",
+                "extra characters",
+            ]
+        }
+    )
+    svp = svp.model_copy(
+        update={
+            "composition_layer": svp.composition_layer.model_copy(
+                update={"constraints": composition_constraints}
+            )
+        }
+    )
+
+    prompt = _render_background_prompt(svp)
+
+    assert "Manhattan skyline" in prompt
+    assert "single moon over the avenue" in prompt
+    assert "extra-wide avenue" in prompt
+    assert "single primary character only" not in prompt
+    assert "extra characters" not in prompt

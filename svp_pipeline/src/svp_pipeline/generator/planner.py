@@ -451,7 +451,7 @@ def _prompt_indicates_single_subject(user_prompt: str) -> bool:
 
 def _find_unnegated_match(pattern: str, lower_prompt: str) -> re.Match[str] | None:
     for match in re.finditer(pattern, lower_prompt):
-        if not _has_negation_prefix(lower_prompt, match.start()):
+        if not _has_negation_context(lower_prompt, match.start(), match.end()):
             return match
     return None
 
@@ -478,13 +478,18 @@ def _has_negation_context(prompt: str, start: int, end: int) -> bool:
 
     prefix = re.split(r"[,;:.、。()（）]", prompt[max(0, start - 16) : start])[-1]
     suffix = re.split(r"[,;:.、。()（）]", prompt[end : end + 16], maxsplit=1)[0]
+    english_negation_after = (
+        r"^\s*(?:is|are|was|were)?\s*"
+        r"(?:not|never)\s+(?:allowed|desired|wanted|needed|included|permitted|present)\b"
+    )
     japanese_negation_after = (
         r"^.{0,4}(?:ではない|じゃない|でない|ではなく|じゃなく|でなく|"
         r"不要|なし|無し|ない|持たない|含めない|避ける|除外|禁止)"
     )
     japanese_negation_before = r"(?:不要な|不要の|禁止の|禁止された|避けるべき)$"
     return bool(
-        re.search(japanese_negation_after, suffix)
+        re.search(english_negation_after, suffix.lower())
+        or re.search(japanese_negation_after, suffix)
         or re.search(japanese_negation_before, prefix)
     )
 
