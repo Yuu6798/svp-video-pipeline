@@ -80,6 +80,7 @@ class Planner:
                 svp = self._apply_character_locks(svp=svp, user_prompt=user_prompt)
             svp = self._apply_background_noise_controls(svp=svp, user_prompt=user_prompt)
             svp = self._apply_object_contact_audit(svp=svp, user_prompt=user_prompt)
+            svp = self._apply_katana_reflection_policy(svp=svp, user_prompt=user_prompt)
             svp = self._enforce_requested_duration(svp=svp, duration=duration)
             return svp
 
@@ -738,6 +739,155 @@ class Planner:
             }
         )
 
+    def _apply_katana_reflection_policy(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
+        object_flags = _detect_object_contact_risk(user_prompt)
+        if "katana" not in object_flags:
+            return svp
+        if _detect_drawn_weapon_request(user_prompt):
+            return svp
+        if not _prompt_indicates_character_weapon_contact(user_prompt):
+            return svp
+        if not _prompt_indicates_waist_katana(user_prompt):
+            return svp
+
+        pose_required = _append_unique(
+            list(svp.pose_layer.constraints.required),
+            [
+                "katana visible area is limited to physical waist hilt and sheath only",
+                "katana does not cast a distinct reflection, shadow, trail, or silhouette",
+            ],
+        )
+        pose_forbidden = _append_unique(
+            list(svp.pose_layer.constraints.forbidden),
+            [
+                "katana reflection on floor",
+                "katana shadow or silhouette on wall",
+                "blade-like line outside the waist sheath",
+                "object-shaped katana floor reflection",
+                "sharp linear katana reflection",
+            ],
+        )
+        pose_constraints = svp.pose_layer.constraints.model_copy(
+            update={"required": pose_required, "forbidden": pose_forbidden}
+        )
+        pose_layer = svp.pose_layer.model_copy(update={"constraints": pose_constraints})
+
+        reflection_forbidden = [
+            "katana reflection on floor",
+            "katana shadow or silhouette on wall",
+            "blade-like line outside the waist sheath",
+            "object-shaped katana floor reflection",
+            "sharp linear katana reflection",
+            "katana reflection on glass, umbrella, rain, floor, wall, or background",
+        ]
+        composition_forbidden = _append_unique(
+            list(svp.composition_layer.constraints.forbidden),
+            reflection_forbidden,
+        )
+        composition_required = _append_unique(
+            list(svp.composition_layer.constraints.required),
+            [
+                (
+                    "floor and background may show soft light only, never "
+                    "object-shaped katana reflections"
+                )
+            ],
+        )
+        composition_constraints = svp.composition_layer.constraints.model_copy(
+            update={
+                "required": composition_required,
+                "forbidden": composition_forbidden,
+            }
+        )
+        composition_layer = svp.composition_layer.model_copy(
+            update={"constraints": composition_constraints}
+        )
+
+        style_forbidden = _append_unique(
+            list(svp.style_layer.constraints.forbidden),
+            reflection_forbidden,
+        )
+        style_required = _append_unique(
+            list(svp.style_layer.constraints.required),
+            [
+                (
+                    "katana-adjacent reflections are diffuse lighting patches, "
+                    "not blade-shaped marks"
+                )
+            ],
+        )
+        style_constraints = svp.style_layer.constraints.model_copy(
+            update={"required": style_required, "forbidden": style_forbidden}
+        )
+        style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
+
+        global_forbidden = _append_unique(
+            list(svp.c3.constraints.forbidden),
+            reflection_forbidden,
+        )
+        global_required = _append_unique(
+            list(svp.c3.constraints.required),
+            [
+                (
+                    "Object-instance rule: katana exists only as the physical waist "
+                    "hilt/sheath; reflections must not duplicate it"
+                )
+            ],
+        )
+        global_constraints = svp.c3.constraints.model_copy(
+            update={"required": global_required, "forbidden": global_forbidden}
+        )
+        critical_fail_conditions = _append_unique(
+            list(svp.c3.evaluation_criteria.critical_fail_conditions),
+            [
+                "katana appears anywhere except physical waist hilt/sheath",
+                "floor or background contains a blade-like reflection",
+                "katana reflection, shadow, trail, or silhouette reads as a second weapon",
+            ],
+        )
+        evaluation_criteria = svp.c3.evaluation_criteria.model_copy(
+            update={"critical_fail_conditions": critical_fail_conditions}
+        )
+        c3 = svp.c3.model_copy(
+            update={
+                "constraints": global_constraints,
+                "evaluation_criteria": evaluation_criteria,
+            }
+        )
+
+        reference_usage_policy = svp.reference_usage_policy.model_copy(
+            update={
+                "object_instance_rules": _append_unique(
+                    list(svp.reference_usage_policy.object_instance_rules),
+                    [
+                        "katana visible area is limited to physical waist hilt and sheath only",
+                        "katana casts no distinct reflection, shadow, trail, or silhouette",
+                        (
+                            "no blade-like line may appear on floor, wall, glass, umbrella, "
+                            "rain, or background"
+                        ),
+                    ],
+                ),
+                "do_not_copy_from_reference": _append_unique(
+                    list(svp.reference_usage_policy.do_not_copy_from_reference),
+                    [
+                        "weapon reflections from reference image",
+                        "blade-like floor or background lines from reference image",
+                    ],
+                ),
+            }
+        )
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "style_layer": style_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
 
 def _load_system_prompt() -> str:
     return (
@@ -816,10 +966,18 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
 
     if _contains_unnegated(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
         flags.add("dense_city")
-    if _contains_unnegated(
-        r"\b(?:rain|rainy|wet|reflection|reflections|pavement)\b",
-        lower_prompt,
-    ):
+    wet_surfaces = (
+        r"(?:floor|floors|pavement|pavements|street|streets|road|roads|"
+        r"sidewalk|sidewalks|walkway|walkways|surface|surfaces|ground)"
+    )
+    wet_reflection_patterns = (
+        r"\b(?:rain|rainy)\b",
+        rf"\bwet\s+(?:reflection|reflections|{wet_surfaces})\b",
+        rf"\b{wet_surfaces}\s+(?:(?:is|are|was|were)\s+)?wet\b",
+        rf"\b{wet_surfaces}\s+reflection(?:s)?\b",
+        r"\breflection(?:s)?\b",
+    )
+    if any(_contains_unnegated(pattern, lower_prompt) for pattern in wet_reflection_patterns):
         flags.add("wet_reflection")
     if _contains_unnegated(r"\b(?:glass|transparent|umbrella)\b", lower_prompt):
         flags.add("transparent_object")
@@ -847,21 +1005,75 @@ def _detect_detailed_background_request(user_prompt: str) -> bool:
 
 def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
-    contact_patterns = [
+    character_patterns = [
         r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
-        r"\b(?:hand|hands|waist|belt|hip|back|shoulder|grip|holding|wielding)\b",
-        r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
-        r"(?:waist|belt|hip|back|hand)\b",
+        r"\b(?:her|his|their)\s+"
+        r"(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder)\b",
+        r"\b(?:hand|hands)\s+(?:holding|gripping|wielding)\b",
+        r"\b(?:katana|sword|blade|gun|weapon)\s+in\s+(?:hand|hands)\b",
+        r"\b(?:holding|gripping|wielding)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade|gun|weapon)\b",
     ]
-    return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
+    weapon_contact_patterns = [
+        r"\b(?:katana|sword|blade|gun|weapon)\b",
+        r"\b(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder|grip|holding|wielding)\b",
+        r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
+        r"(?:waist(?!-)|belt(?!-)|hip(?!-)|back|hand)\b",
+    ]
+    has_character = any(
+        _contains_unnegated(pattern, lower_prompt) for pattern in character_patterns
+    )
+    has_weapon_contact = any(
+        _contains_unnegated(pattern, lower_prompt) for pattern in weapon_contact_patterns
+    )
+    return has_character and has_weapon_contact
+
+
+def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    side_location = (
+        r"(?:(?:left|right|front|back|rear|side)\s+)?"
+        r"(?:waist|belt|hip)"
+        r"(?![-\s]+(?:high|height|level|display|stand|table|shelf|rack)\b)\b"
+    )
+    waist_katana_patterns = [
+        r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
+        rf"(?:her|his|their|the)\s+{side_location}",
+        r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?(?:at|on)\s+"
+        rf"{side_location}",
+        r"\bkatana\s+(?:is\s+)?sheathed\s+(?:at|on)\s+"
+        rf"{side_location}",
+        r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"(?:attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
+        rf"{side_location}",
+        rf"\b{side_location}\s+"
+        r"(?:katana\s+sheath|katana\s+scabbard|sheathed\s+katana)\b"
+        r"(?!\s+(?:tattoo|print|pattern|emblem|logo|graphic|design)\b)",
+        r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
+        rf"(?:at|on)\s+(?:her|his|their|the)\s+{side_location}",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 
 
 def _detect_drawn_weapon_request(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     drawn_patterns = [
         r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
+        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?"
+        r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
+        r"\b(?:she|he|they|woman|girl|man|boy|character|subject|samurai|ninja)\s+"
+        r"(?:(?:(?:is|was|were)\s+)?"
+        r"(?:draw|draws|drawing|drew|pull|pulls|pulling|pulled)|"
+        r"(?:(?:has|had)\s+(?:drawn|pulled)))\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
+        r"\bunsheath(?:e|es|ed|ing)?\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
-        r"\b(?:holding|wielding|gripping)\s+(?:a\s+)?(?:katana|sword|blade)\b",
+        r"\b(?:holding|wielding|gripping)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in drawn_patterns)
 
