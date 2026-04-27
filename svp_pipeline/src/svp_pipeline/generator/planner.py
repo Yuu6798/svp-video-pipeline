@@ -1030,7 +1030,10 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
 
 def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
-    side_location = r"(?:(?:left|right|front|back|rear|side)\s+)?(?:waist|belt|hip)(?!-)\b"
+    side_location = (
+        r"(?:(?:left|right|front|back|rear|side)\s+)?"
+        r"(?:waist|belt|hip)(?![-\s]+high\b)\b"
+    )
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
@@ -1053,7 +1056,7 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
         r"(?:(?:a|the|her|his|their|its)\s+)?"
         r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
-        r"\b(?:unsheath|unsheathes|unsheathing)\s+"
+        r"\bunsheath(?:e|es|ing)?\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
         r"\b(?:holding|wielding|gripping)\s+"
