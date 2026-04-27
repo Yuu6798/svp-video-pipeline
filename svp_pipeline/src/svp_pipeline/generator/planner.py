@@ -1061,7 +1061,9 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
         r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
         r"\b(?:she|he|they|woman|girl|man|boy|character|subject|samurai|ninja)\s+"
-        r"(?:(?:is|was)\s+)?(?:draw|draws|drawing|pull|pulls|pulling)\s+"
+        r"(?:(?:(?:is|was|were)\s+)?"
+        r"(?:draw|draws|drawing|drew|pull|pulls|pulling|pulled)|"
+        r"(?:(?:has|had)\s+(?:drawn|pulled)))\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
         r"\bunsheath(?:e|es|ed|ing)?\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",

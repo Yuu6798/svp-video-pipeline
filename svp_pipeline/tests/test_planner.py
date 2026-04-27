@@ -598,6 +598,12 @@ def test_planner_allows_drawing_possessive_katana_from_sheath() -> None:
         "dark indoor background",
         "single young adult woman drawing her katana at her waist in a simple "
         "dark indoor background",
+        "single young adult woman, she drew her katana at her waist in a simple "
+        "dark indoor background",
+        "single young adult woman, she pulled her katana at her waist in a simple "
+        "dark indoor background",
+        "single young adult woman, she had drawn her katana at her waist in a "
+        "simple dark indoor background",
     ],
 )
 def test_planner_allows_actor_draw_katana_without_sheath_preposition(prompt: str) -> None:
