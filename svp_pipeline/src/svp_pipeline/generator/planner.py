@@ -1033,7 +1033,7 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     side_location = (
         r"(?:(?:left|right|front|back|rear|side)\s+)?"
-        r"(?:waist|belt|hip)(?![-\s]+high\b)\b"
+        r"(?:waist|belt|hip)(?![-\s]+(?:high|height)\b)\b"
     )
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
