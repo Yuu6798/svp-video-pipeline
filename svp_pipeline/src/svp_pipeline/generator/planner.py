@@ -968,7 +968,7 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
         flags.add("dense_city")
     wet_surfaces = (
         r"(?:floor|floors|pavement|pavements|street|streets|road|roads|"
-        r"surface|surfaces|ground)"
+        r"sidewalk|sidewalks|walkway|walkways|surface|surfaces|ground)"
     )
     wet_reflection_patterns = (
         r"\b(?:rain|rainy)\b",
@@ -1033,7 +1033,7 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     side_location = (
         r"(?:(?:left|right|front|back|rear|side)\s+)?"
-        r"(?:waist|belt|hip)(?![-\s]+(?:high|height)\b)\b"
+        r"(?:waist|belt|hip)(?![-\s]+(?:high|height|level)\b)\b"
     )
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"

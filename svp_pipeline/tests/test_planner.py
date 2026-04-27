@@ -345,6 +345,20 @@ def test_planner_detects_past_tense_wet_surface_predicate() -> None:
     )
 
 
+def test_planner_detects_sidewalk_wet_surface_predicate() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("single young adult woman in a neon city where the sidewalk is wet")
+
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "broad smooth wet reflection bands" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
 def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -844,6 +858,42 @@ def test_planner_does_not_treat_hip_height_surface_as_waist_sheath() -> None:
         svp.pose_layer.constraints.required
     )
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+
+
+def test_planner_does_not_treat_waist_level_surface_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a katana on waist-level table in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
+def test_planner_does_not_treat_hip_level_surface_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a katana on hip level shelf in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
 
 
 def test_planner_does_not_treat_space_separated_waist_high_surface_as_waist_sheath() -> None:
