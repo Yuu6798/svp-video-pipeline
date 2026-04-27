@@ -591,6 +591,30 @@ def test_planner_allows_drawing_possessive_katana_from_sheath() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "single young adult woman, she draws her katana at her waist in a simple "
+        "dark indoor background",
+        "single young adult woman drawing her katana at her waist in a simple "
+        "dark indoor background",
+    ],
+)
+def test_planner_allows_actor_draw_katana_without_sheath_preposition(prompt: str) -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(prompt)
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_allows_possessive_held_katana_at_waist() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -950,14 +974,22 @@ def test_planner_does_not_treat_bare_belt_as_character_contact() -> None:
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
 
 
-def test_planner_does_not_treat_belt_display_stand_as_waist_sheath() -> None:
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "single young adult woman next to a katana on the belt display stand in a "
+        "simple dark indoor background",
+        "single young adult woman next to a katana on the hip display stand in a "
+        "simple dark indoor background",
+        "single young adult woman next to a katana on the waist rack in a simple "
+        "dark indoor background",
+    ],
+)
+def test_planner_does_not_treat_display_fixture_as_waist_sheath(prompt: str) -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
 
-    svp = planner.plan(
-        "single young adult woman next to a katana on a belt display stand in a "
-        "simple dark indoor background"
-    )
+    svp = planner.plan(prompt)
 
     assert "katana visible area is limited to physical waist hilt and sheath only" not in (
         svp.pose_layer.constraints.required
