@@ -311,6 +311,23 @@ def test_planner_detects_wet_surface_predicate_word_order() -> None:
     )
 
 
+def test_planner_detects_plural_wet_surface_phrasing() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman in a neon city where wet streets and pavements "
+        "are wet"
+    )
+
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "broad smooth wet reflection bands" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
 def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -601,6 +618,24 @@ def test_planner_does_not_treat_waist_high_surface_as_waist_sheath() -> None:
     planner = Planner(client=client)
 
     svp = planner.plan("still life product shot of a katana on waist-high table")
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+
+
+def test_planner_does_not_treat_hip_high_surface_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_STILL_LIFE_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("still life product shot of a katana on hip-high table")
 
     assert "main weapon is a single physical object" not in (
         svp.pose_layer.constraints.required

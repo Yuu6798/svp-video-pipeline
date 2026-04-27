@@ -966,11 +966,15 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
 
     if _contains_unnegated(r"\b(?:cyberpunk|neon|night city|cityscape|urban)\b", lower_prompt):
         flags.add("dense_city")
+    wet_surfaces = (
+        r"(?:floor|floors|pavement|pavements|street|streets|road|roads|"
+        r"surface|surfaces|ground)"
+    )
     wet_reflection_patterns = (
         r"\b(?:rain|rainy)\b",
-        r"\bwet\s+(?:reflection|reflections|floor|pavement|street|road|surface|ground)\b",
-        r"\b(?:floor|pavement|street|road|surface|ground)\s+(?:is\s+)?wet\b",
-        r"\b(?:floor|pavement|street|road|surface|ground)\s+reflection(?:s)?\b",
+        rf"\bwet\s+(?:reflection|reflections|{wet_surfaces})\b",
+        rf"\b{wet_surfaces}\s+(?:(?:is|are)\s+)?wet\b",
+        rf"\b{wet_surfaces}\s+reflection(?:s)?\b",
         r"\breflection(?:s)?\b",
     )
     if any(_contains_unnegated(pattern, lower_prompt) for pattern in wet_reflection_patterns):
@@ -1003,9 +1007,9 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     contact_patterns = [
         r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
-        r"\b(?:hand|hands|waist(?!-)|belt|hip|back|shoulder|grip|holding|wielding)\b",
+        r"\b(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder|grip|holding|wielding)\b",
         r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
-        r"(?:waist(?!-)|belt|hip|back|hand)\b",
+        r"(?:waist(?!-)|belt(?!-)|hip(?!-)|back|hand)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
 
@@ -1015,13 +1019,13 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
-        r"(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
+        r"(?:her|his|their|the)\s+(?:waist|belt|hip)(?!-)\b",
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
-        r"(?:waist(?!-)|belt|hip)\b",
+        r"(?:waist|belt|hip)(?!-)\b",
         r"\b(?:waist|belt|hip)\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
         r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
-        r"(?:at|on)\s+(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
+        r"(?:at|on)\s+(?:her|his|their|the)\s+(?:waist|belt|hip)(?!-)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 
