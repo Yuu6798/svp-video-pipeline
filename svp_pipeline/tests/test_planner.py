@@ -274,6 +274,27 @@ def test_planner_background_risk_respects_negated_weapon_terms() -> None:
     )
 
 
+def test_planner_background_risk_respects_negated_reflection_terms() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a katana sheathed at her waist, simple dark "
+        "indoor background, no rain, no umbrella, no neon signs, no wet reflections, "
+        "no katana reflection, no sharp linear floor reflections"
+    )
+
+    assert "midground: broad smooth wet reflection bands" not in (
+        svp.composition_layer.depth_layers
+    )
+    assert "broad smooth wet reflection bands" not in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+    assert "fragmented noisy wet reflections" not in (
+        svp.composition_layer.constraints.forbidden
+    )
+
+
 def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -432,6 +453,37 @@ def test_planner_does_not_force_umbrella_rules_without_umbrella() -> None:
     assert "one hand <-> umbrella handle" not in svp.pose_layer.contact_points
     assert "umbrella count = exactly one" not in (
         svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_limits_katana_reflections_to_physical_waist_object() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a katana sheathed at her waist in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana does not cast a distinct reflection, shadow, trail, or silhouette" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "blade-like line outside the waist sheath" in (
+        svp.style_layer.constraints.forbidden
+    )
+    assert "floor or background contains a blade-like reflection" in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert (
+        "no blade-like line may appear on floor, wall, glass, umbrella, rain, or background"
+        in svp.reference_usage_policy.object_instance_rules
     )
 
 
