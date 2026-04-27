@@ -800,14 +800,42 @@ def test_planner_detects_side_qualified_hip_katana() -> None:
     )
 
 
-def test_planner_does_not_treat_hip_katana_tattoo_as_waist_sheath() -> None:
+def test_planner_detects_determinerless_waist_katana() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
 
     svp = planner.plan(
-        "single young adult woman with a left hip katana tattoo in a simple "
-        "dark indoor background"
+        "single young adult woman with a katana at waist in a simple dark indoor "
+        "background"
     )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "single young adult woman with a left hip katana tattoo in a simple dark "
+        "indoor background",
+        "single young adult woman with a left hip katana sheath tattoo in a simple "
+        "dark indoor background",
+        "single young adult woman with a left hip katana scabbard tattoo in a "
+        "simple dark indoor background",
+        "single young adult woman with a left hip sheathed katana tattoo in a "
+        "simple dark indoor background",
+    ],
+)
+def test_planner_does_not_treat_hip_katana_tattoo_as_waist_sheath(prompt: str) -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(prompt)
 
     assert "katana visible area is limited to physical waist hilt and sheath only" not in (
         svp.pose_layer.constraints.required
