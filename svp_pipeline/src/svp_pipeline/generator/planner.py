@@ -1053,6 +1053,8 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
         r"(?:(?:a|the|her|his|their|its)\s+)?"
         r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
+        r"\b(?:unsheath|unsheathes|unsheathing)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
         r"\b(?:holding|wielding|gripping)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade)\b",
