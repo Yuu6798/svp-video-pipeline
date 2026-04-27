@@ -1039,8 +1039,10 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
         rf"(?:her|his|their|the)\s+{side_location}",
+        r"\bkatana\s+(?:is\s+)?sheathed\s+(?:at|on)\s+"
+        rf"{side_location}",
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
-        r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
+        r"(?:attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
         rf"{side_location}",
         rf"\b{side_location}\s+(?:katana\s+sheath|katana\s+scabbard|sheathed\s+katana)\b",
         r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"

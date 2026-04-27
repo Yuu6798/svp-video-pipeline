@@ -950,6 +950,24 @@ def test_planner_does_not_treat_bare_belt_as_character_contact() -> None:
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
 
 
+def test_planner_does_not_treat_belt_display_stand_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman next to a katana on a belt display stand in a "
+        "simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_does_not_treat_near_waist_as_waist_sheath() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
