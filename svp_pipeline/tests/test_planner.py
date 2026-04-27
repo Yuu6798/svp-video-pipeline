@@ -649,6 +649,24 @@ def test_planner_does_not_treat_hip_high_surface_as_waist_sheath() -> None:
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
 
 
+def test_planner_does_not_treat_bare_belt_as_character_contact() -> None:
+    client = DummyClient(responses=[VALID_STILL_LIFE_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("still life product shot of a katana on a leather belt")
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+
+
 def test_planner_does_not_treat_near_waist_as_waist_sheath() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -663,6 +681,24 @@ def test_planner_does_not_treat_near_waist_as_waist_sheath() -> None:
     )
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
     assert "katana casts no distinct reflection, shadow, trail, or silhouette" not in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_detects_strapped_waist_katana() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a sheathed katana strapped to her waist in "
+        "a simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
         svp.reference_usage_policy.object_instance_rules
     )
 
