@@ -747,6 +747,8 @@ class Planner:
             return svp
         if not _prompt_indicates_character_weapon_contact(user_prompt):
             return svp
+        if not _prompt_indicates_waist_katana(user_prompt):
+            return svp
 
         pose_required = _append_unique(
             list(svp.pose_layer.constraints.required),
@@ -1005,6 +1007,22 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
         r"(?:waist|belt|hip|back|hand)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
+
+
+def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
+    lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    waist_katana_patterns = [
+        r"\b(?:katana|sword|blade)\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
+        r"(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
+        r"\b(?:katana|sword|blade)\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
+        r"(?:waist|belt|hip)\b",
+        r"\b(?:waist|belt|hip)\s+(?:sheath|scabbard|katana|sword|blade)\b",
+        r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+(?:katana|sword|blade)\s+"
+        r"(?:at|on|near)\s+(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
+    ]
+    return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 
 
 def _detect_drawn_weapon_request(user_prompt: str) -> bool:
