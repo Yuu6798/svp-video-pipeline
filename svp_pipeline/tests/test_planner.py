@@ -543,6 +543,24 @@ def test_planner_allows_drawing_possessive_katana_from_sheath() -> None:
     )
 
 
+def test_planner_allows_possessive_held_katana_at_waist() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman holding her katana at her waist in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_draw_imperative_keeps_katana_policy() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -647,6 +665,24 @@ def test_planner_detects_side_qualified_hip_katana() -> None:
     assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
     assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
         svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_does_not_treat_hip_katana_tattoo_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a left hip katana tattoo in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
     )
 
 
