@@ -295,6 +295,22 @@ def test_planner_background_risk_respects_negated_reflection_terms() -> None:
     )
 
 
+def test_planner_detects_wet_surface_predicate_word_order() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman in a neon city where the pavement is wet"
+    )
+
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "broad smooth wet reflection bands" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
 def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -452,6 +468,24 @@ def test_planner_allows_drawing_katana_from_waist() -> None:
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
     assert "katana appears anywhere except physical waist hilt/sheath" not in (
         svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
+def test_planner_draw_imperative_keeps_katana_policy() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "draw a single young adult woman with a katana at her waist in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
+        svp.reference_usage_policy.object_instance_rules
     )
 
 

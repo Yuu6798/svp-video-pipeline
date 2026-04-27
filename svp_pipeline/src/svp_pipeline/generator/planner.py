@@ -969,6 +969,7 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
     wet_reflection_patterns = (
         r"\b(?:rain|rainy)\b",
         r"\bwet\s+(?:reflection|reflections|floor|pavement|street|road|surface|ground)\b",
+        r"\b(?:floor|pavement|street|road|surface|ground)\s+(?:is\s+)?wet\b",
         r"\b(?:floor|pavement|street|road|surface|ground)\s+reflection(?:s)?\b",
         r"\breflection(?:s)?\b",
     )
@@ -1029,8 +1030,7 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     drawn_patterns = [
         r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
-        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+(?:a\s+)?(?:katana|sword|blade)\b",
-        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+(?:the\s+)?"
+        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+(?:(?:a|the)\s+)?"
         r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+(?:a\s+)?(?:sheath|scabbard)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
         r"\b(?:holding|wielding|gripping)\s+(?:a\s+)?(?:katana|sword|blade)\b",
