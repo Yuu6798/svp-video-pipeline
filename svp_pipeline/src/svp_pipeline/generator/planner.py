@@ -1009,6 +1009,9 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
         r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
         r"\b(?:her|his|their)\s+"
         r"(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder)\b",
+        r"\b(?:hand|hands)\s+(?:holding|gripping|wielding)\b",
+        r"\b(?:holding|gripping|wielding)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade|gun|weapon)\b",
     ]
     weapon_contact_patterns = [
         r"\b(?:katana|sword|blade|gun|weapon)\b",
@@ -1027,16 +1030,17 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
 
 def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
+    side_location = r"(?:(?:left|right|front|back|rear|side)\s+)?(?:waist|belt|hip)(?!-)\b"
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
-        r"(?:her|his|their|the)\s+(?:waist|belt|hip)(?!-)\b",
+        rf"(?:her|his|their|the)\s+{side_location}",
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from|strapped\s+to)\s+"
-        r"(?:waist|belt|hip)(?!-)\b",
-        r"\b(?:waist|belt|hip)\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
+        rf"{side_location}",
+        rf"\b{side_location}\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
         r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
-        r"(?:at|on)\s+(?:her|his|their|the)\s+(?:waist|belt|hip)(?!-)\b",
+        rf"(?:at|on)\s+(?:her|his|their|the)\s+{side_location}",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 

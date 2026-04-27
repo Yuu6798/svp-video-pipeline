@@ -373,6 +373,25 @@ def test_planner_does_not_add_character_contact_for_still_life_weapon() -> None:
     )
 
 
+def test_planner_treats_hand_holding_katana_as_character_contact() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "hands holding a katana in a simple dark indoor background"
+    )
+
+    assert "main weapon is a single physical object" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" in (
+        svp.pose_layer.contact_points
+    )
+    assert "no weapon-like reflections in the background" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
 def test_planner_background_quality_rules_follow_risk_flags() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -609,6 +628,24 @@ def test_planner_does_not_force_waist_katana_policy_for_back_sheath() -> None:
     )
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
     assert "katana casts no distinct reflection, shadow, trail, or silhouette" not in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_detects_side_qualified_hip_katana() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a sheathed katana at her left hip in a "
+        "simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
         svp.reference_usage_policy.object_instance_rules
     )
 
