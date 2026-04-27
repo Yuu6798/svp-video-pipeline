@@ -1012,14 +1012,14 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
 def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     waist_katana_patterns = [
-        r"\b(?:katana|sword|blade)\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
         r"(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
-        r"\b(?:katana|sword|blade)\s+(?:is\s+)?(?:sheathed\s+)?"
+        r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
         r"(?:waist|belt|hip)\b",
-        r"\b(?:waist|belt|hip)\s+(?:sheath|scabbard|katana|sword|blade)\b",
-        r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+(?:katana|sword|blade)\s+"
+        r"\b(?:waist|belt|hip)\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
+        r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
         r"(?:at|on|near)\s+(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)

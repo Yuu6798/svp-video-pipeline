@@ -508,6 +508,27 @@ def test_planner_does_not_force_waist_katana_policy_for_back_sheath() -> None:
     )
 
 
+def test_planner_does_not_apply_katana_policy_to_generic_waist_sword() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman with a sheathed sword at her waist in a simple "
+        "dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" not in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+    assert "floor or background contains a blade-like reflection" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_character_lock_preserves_male_subject_traits() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
