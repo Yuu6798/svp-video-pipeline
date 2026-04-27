@@ -973,7 +973,7 @@ def _detect_background_noise_risk(user_prompt: str) -> set[str]:
     wet_reflection_patterns = (
         r"\b(?:rain|rainy)\b",
         rf"\bwet\s+(?:reflection|reflections|{wet_surfaces})\b",
-        rf"\b{wet_surfaces}\s+(?:(?:is|are)\s+)?wet\b",
+        rf"\b{wet_surfaces}\s+(?:(?:is|are|was|were)\s+)?wet\b",
         rf"\b{wet_surfaces}\s+reflection(?:s)?\b",
         r"\breflection(?:s)?\b",
     )
@@ -1010,6 +1010,7 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
         r"\b(?:her|his|their)\s+"
         r"(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder)\b",
         r"\b(?:hand|hands)\s+(?:holding|gripping|wielding)\b",
+        r"\b(?:katana|sword|blade|gun|weapon)\s+in\s+(?:hand|hands)\b",
         r"\b(?:holding|gripping|wielding)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:katana|sword|blade|gun|weapon)\b",
     ]

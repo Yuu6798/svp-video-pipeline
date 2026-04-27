@@ -328,6 +328,23 @@ def test_planner_detects_plural_wet_surface_phrasing() -> None:
     )
 
 
+def test_planner_detects_past_tense_wet_surface_predicate() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman in a neon city where the street was wet and "
+        "the pavements were wet"
+    )
+
+    assert "midground: broad smooth wet reflection bands" in (
+        svp.composition_layer.depth_layers
+    )
+    assert "broad smooth wet reflection bands" in (
+        svp.reference_usage_policy.background_quality_rules
+    )
+
+
 def test_planner_background_depth_does_not_force_single_character_for_group() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -380,6 +397,23 @@ def test_planner_treats_hand_holding_katana_as_character_contact() -> None:
     svp = planner.plan(
         "hands holding a katana in a simple dark indoor background"
     )
+
+    assert "main weapon is a single physical object" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" in (
+        svp.pose_layer.contact_points
+    )
+    assert "no weapon-like reflections in the background" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
+def test_planner_treats_katana_in_hand_as_character_contact() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("katana in hand in a simple dark indoor background")
 
     assert "main weapon is a single physical object" in (
         svp.pose_layer.constraints.required
