@@ -489,6 +489,24 @@ def test_planner_allows_drawing_katana_from_determined_sheath() -> None:
     )
 
 
+def test_planner_allows_drawing_possessive_katana_from_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman drawing her katana from her sheath, katana at "
+        "her waist, simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_draw_imperative_keeps_katana_policy() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -594,6 +612,24 @@ def test_planner_does_not_treat_waist_high_surface_as_waist_sheath() -> None:
         svp.pose_layer.constraints.required
     )
     assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+
+
+def test_planner_does_not_treat_near_waist_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman holding a sheathed katana near her waist in a "
+        "simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" not in (
+        svp.reference_usage_policy.object_instance_rules
+    )
 
 
 def test_planner_does_not_apply_katana_policy_to_generic_waist_sword() -> None:

@@ -1021,7 +1021,7 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
         r"(?:waist(?!-)|belt|hip)\b",
         r"\b(?:waist|belt|hip)\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
         r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
-        r"(?:at|on|near)\s+(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
+        r"(?:at|on)\s+(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 
@@ -1030,7 +1030,8 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     drawn_patterns = [
         r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
-        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+(?:(?:a|the)\s+)?"
+        r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?"
         r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
         r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
