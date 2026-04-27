@@ -1007,6 +1007,8 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     character_patterns = [
         r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
+        r"\b(?:her|his|their)\s+"
+        r"(?:hand|hands|waist(?!-)|belt(?!-)|hip(?!-)|back|shoulder)\b",
     ]
     weapon_contact_patterns = [
         r"\b(?:katana|sword|blade|gun|weapon)\b",

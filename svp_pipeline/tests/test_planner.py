@@ -703,6 +703,23 @@ def test_planner_detects_strapped_waist_katana() -> None:
     )
 
 
+def test_planner_detects_pronoun_only_waist_katana() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "katana sheathed at her waist in a simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" in svp.composition_layer.constraints.forbidden
+    assert "katana casts no distinct reflection, shadow, trail, or silhouette" in (
+        svp.reference_usage_policy.object_instance_rules
+    )
+
+
 def test_planner_does_not_apply_katana_policy_to_generic_waist_sword() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
