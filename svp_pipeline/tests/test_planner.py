@@ -437,6 +437,24 @@ def test_planner_allows_explicit_drawn_katana_with_umbrella() -> None:
     )
 
 
+def test_planner_allows_drawing_katana_from_waist() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman drawing a katana from the sheath at her waist "
+        "in a simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_does_not_force_umbrella_rules_without_umbrella() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
