@@ -471,6 +471,24 @@ def test_planner_allows_drawing_katana_from_waist() -> None:
     )
 
 
+def test_planner_allows_drawing_katana_from_determined_sheath() -> None:
+    client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan(
+        "single young adult woman drawing a katana from her sheath, katana at her "
+        "waist, simple dark indoor background"
+    )
+
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
+    assert "katana appears anywhere except physical waist hilt/sheath" not in (
+        svp.c3.evaluation_criteria.critical_fail_conditions
+    )
+
+
 def test_planner_draw_imperative_keeps_katana_policy() -> None:
     client = DummyClient(responses=[VALID_SHIBUYA_RESPONSE])
     planner = Planner(client=client)
@@ -558,6 +576,24 @@ def test_planner_does_not_force_waist_katana_policy_for_back_sheath() -> None:
     assert "katana casts no distinct reflection, shadow, trail, or silhouette" not in (
         svp.reference_usage_policy.object_instance_rules
     )
+
+
+def test_planner_does_not_treat_waist_high_surface_as_waist_sheath() -> None:
+    client = DummyClient(responses=[VALID_STILL_LIFE_RESPONSE])
+    planner = Planner(client=client)
+
+    svp = planner.plan("still life product shot of a katana on waist-high table")
+
+    assert "main weapon is a single physical object" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "main weapon attached to character contact point" not in (
+        svp.pose_layer.contact_points
+    )
+    assert "katana visible area is limited to physical waist hilt and sheath only" not in (
+        svp.pose_layer.constraints.required
+    )
+    assert "katana reflection on floor" not in svp.composition_layer.constraints.forbidden
 
 
 def test_planner_does_not_apply_katana_policy_to_generic_waist_sword() -> None:

@@ -1003,9 +1003,9 @@ def _prompt_indicates_character_weapon_contact(user_prompt: str) -> bool:
     lower_prompt = " ".join(user_prompt.lower().replace(";", ",").split())
     contact_patterns = [
         r"\b(?:person|character|woman|girl|man|boy|subject|human|samurai|ninja)\b",
-        r"\b(?:hand|hands|waist|belt|hip|back|shoulder|grip|holding|wielding)\b",
+        r"\b(?:hand|hands|waist(?!-)|belt|hip|back|shoulder|grip|holding|wielding)\b",
         r"\b(?:katana|sword|blade|gun|weapon)\s+at\s+(?:her|his|their|the)\s+"
-        r"(?:waist|belt|hip|back|hand)\b",
+        r"(?:waist(?!-)|belt|hip|back|hand)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in contact_patterns)
 
@@ -1015,13 +1015,13 @@ def _prompt_indicates_waist_katana(user_prompt: str) -> bool:
     waist_katana_patterns = [
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
-        r"(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
+        r"(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
         r"\bkatana\s+(?:is\s+)?(?:sheathed\s+)?"
         r"(?:at|on|attached\s+to|fixed\s+to|hanging\s+from)\s+"
-        r"(?:waist|belt|hip)\b",
+        r"(?:waist(?!-)|belt|hip)\b",
         r"\b(?:waist|belt|hip)\s+(?:katana|katana\s+sheath|katana\s+scabbard)\b",
         r"\b(?:sheathed|sheathe|scabbard(?:ed)?)\s+katana\s+"
-        r"(?:at|on|near)\s+(?:her|his|their|the)\s+(?:waist|belt|hip)\b",
+        r"(?:at|on|near)\s+(?:her|his|their|the)\s+(?:waist(?!-)|belt|hip)\b",
     ]
     return any(_contains_unnegated(pattern, lower_prompt) for pattern in waist_katana_patterns)
 
@@ -1031,7 +1031,8 @@ def _detect_drawn_weapon_request(user_prompt: str) -> bool:
     drawn_patterns = [
         r"\b(?:drawn|unsheathed|raised|brandished)\s+(?:katana|sword|blade)\b",
         r"\b(?:draw|draws|drawing|pull|pulls|pulling)\s+(?:(?:a|the)\s+)?"
-        r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+(?:a\s+)?(?:sheath|scabbard)\b",
+        r"(?:katana|sword|blade)\s+(?:from|out\s+of)\s+"
+        r"(?:(?:a|the|her|his|their|its)\s+)?(?:waist\s+)?(?:sheath|scabbard)\b",
         r"\b(?:katana|sword|blade)\s+(?:drawn|unsheathed|in hand|held|raised)\b",
         r"\b(?:holding|wielding|gripping)\s+(?:a\s+)?(?:katana|sword|blade)\b",
     ]
