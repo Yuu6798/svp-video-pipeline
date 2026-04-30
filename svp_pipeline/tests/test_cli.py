@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from PIL import Image
 from typer.testing import CliRunner
 
 import svp_pipeline.cli as cli_mod
@@ -30,6 +31,10 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
+
+
+def _write_png(path: Path, color: tuple[int, int, int] = (0, 0, 0)) -> None:
+    Image.new("RGB", (2, 2), color=color).save(path)
 
 
 def _load(name: str) -> SVPVideo:
@@ -73,6 +78,9 @@ class FakePipeline:
         reference_image_path: Path | None = None,
         reference_crop: int | None = None,
         separate_character_bg: bool = False,
+        from_svp_path: Path | None = None,
+        reuse_run_dir: Path | None = None,
+        reuse_image: str | None = None,
         progress_callback=None,
     ) -> PipelineResult:
         self.run_calls.append(
@@ -83,6 +91,9 @@ class FakePipeline:
                 "reference_image_path": reference_image_path,
                 "reference_crop": reference_crop,
                 "separate_character_bg": separate_character_bg,
+                "from_svp_path": from_svp_path,
+                "reuse_run_dir": reuse_run_dir,
+                "reuse_image": reuse_image,
             }
         )
         if FakePipeline.error is not None:
@@ -98,7 +109,7 @@ class FakePipeline:
         svp = _load("shibuya_dusk.json")
         svp_path.write_text(svp.model_dump_json(indent=2), encoding="utf-8")
         if not self.kwargs.get("dry_run"):
-            image_path.write_bytes(TINY_PNG_BYTES)
+            _write_png(image_path)
             if video_path is not None:
                 video_path.write_bytes(b"mp4")
 
@@ -164,6 +175,19 @@ def test_help_shows_all_options() -> None:
         "--dry-run",
         "--no-video",
         "--archive-drive",
+        "--from-svp",
+        "--reuse-run",
+        "--reuse-image",
+        "--audit-image",
+        "--audit-backend",
+        "--compare-image",
+        "--audit-repair",
+        "object",
+        "contact",
+        "viewer",
+        "pose",
+        "failure",
+        "regenerate",
         "--verbose",
         "--version",
     ):
@@ -180,6 +204,25 @@ def test_prompt_required() -> None:
     result = runner.invoke(app, [])
     assert result.exit_code == 2
     assert "prompt" in result.output.lower()
+
+
+def test_prompt_can_be_omitted_with_from_svp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["--from-svp", str(svp_path), "--no-video", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    call = FakePipeline.instances[0].run_calls[0]
+    assert call["from_svp_path"] == svp_path
+    assert "regenerate from SVP" in call["user_prompt"]
 
 
 def test_unquoted_multi_word_prompt_is_preserved(
@@ -369,6 +412,527 @@ def test_backend_selection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     assert result.exit_code == 0
     assert FakePipeline.instances[0].kwargs["image_backend"] == "openai"
+
+
+def test_from_svp_skips_anthropic_key_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-test")
+    svp_path = tmp_path / "source.svp.json"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["--from-svp", str(svp_path), "--no-video", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["from_svp_path"] == svp_path
+
+
+def test_reuse_run_skips_planner_and_image_key_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    reuse_run = tmp_path / "source-run"
+    reuse_run.mkdir()
+    (reuse_run / "svp.json").write_text(
+        _load("shibuya_dusk.json").model_dump_json(),
+        encoding="utf-8",
+    )
+    (reuse_run / "composite.png").write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "--reuse-run",
+            str(reuse_run),
+            "--reuse-image",
+            "composite",
+            "--no-video",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    call = FakePipeline.instances[0].run_calls[0]
+    assert call["reuse_run_dir"] == reuse_run
+    assert call["reuse_image"] == "composite"
+
+
+def test_reuse_run_rejects_reference_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    reuse_run = tmp_path / "source-run"
+    reuse_run.mkdir()
+    (reuse_run / "svp.json").write_text(
+        _load("shibuya_dusk.json").model_dump_json(),
+        encoding="utf-8",
+    )
+    (reuse_run / "image.png").write_bytes(TINY_PNG_BYTES)
+    reference = tmp_path / "reference.png"
+    reference.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--reuse-run",
+            str(reuse_run),
+            "--reference-image",
+            str(reference),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "do not combine" in result.output
+
+
+def test_invalid_reuse_image_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    result = runner.invoke(
+        app,
+        ["prompt", "--reuse-image", "mask", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid --reuse-image" in result.output
+
+
+def test_repair_from_rpe_writes_proposal_without_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    observed_rpe = tmp_path / "observed_rpe.json"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    observed_rpe.write_text(
+        json.dumps(
+            {
+                "missing": ["single character remains centered"],
+                "violations": ["sword-like background reflection"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--repair-from-rpe",
+            str(observed_rpe),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Semantic repair proposal written" in result.output
+    repair_dirs = list(tmp_path.glob("repair-*"))
+    assert len(repair_dirs) == 1
+    assert (repair_dirs[0] / "semantic_diff.json").exists()
+    assert (repair_dirs[0] / "repair_proposal.json").exists()
+    assert (repair_dirs[0] / "target_svp.proposed.json").exists()
+
+
+def test_repair_from_rpe_ignores_bad_generation_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    monkeypatch.setenv("DEFAULT_PLANNER_MODEL", "not-a-planner")
+    monkeypatch.setenv("DEFAULT_IMAGE_BACKEND", "not-an-image-backend")
+    svp_path = tmp_path / "source.svp.json"
+    observed_rpe = tmp_path / "observed_rpe.json"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    observed_rpe.write_text(
+        json.dumps({"violations": ["sword-like background reflection"]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--repair-from-rpe",
+            str(observed_rpe),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Semantic repair proposal written" in result.output
+
+
+def test_repair_from_rpe_handles_invalid_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    observed_rpe = tmp_path / "observed_rpe.json"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    observed_rpe.write_text("{not-json", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--repair-from-rpe",
+            str(observed_rpe),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Invalid JSON" in result.output
+
+
+def test_repair_from_rpe_requires_svp_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    observed_rpe = tmp_path / "observed_rpe.json"
+    observed_rpe.write_text("{}", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["--repair-from-rpe", str(observed_rpe), "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "requires --from-svp or --reuse-run" in result.output
+
+
+def test_audit_image_writes_observed_rpe_without_api_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-observed",
+            "silver ponytail is visible",
+            "--audit-missing",
+            "red eyes are weak",
+            "--audit-violation",
+            "sword-like background reflection",
+            "--audit-object-state",
+            "scabbard: separate dark sheath at upper-left",
+            "--audit-contact-graph",
+            "left_hand -> scabbard",
+            "--audit-viewer-contact-graph",
+            "viewer_left_hand -> katana_handle",
+            "--audit-anatomical-contact-graph",
+            "character_right_hand -> katana_handle",
+            "--audit-pose-intent",
+            "unsheathing / draw-pose",
+            "--audit-failure-mode",
+            "left hand grips the wrong object",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Image RPE audit written" in result.output
+    audit_dirs = list(tmp_path.glob("audit-*"))
+    assert len(audit_dirs) == 1
+    observed = json.loads((audit_dirs[0] / "observed_rpe.json").read_text(encoding="utf-8"))
+    assert observed["missing"] == ["red eyes are weak"]
+    assert observed["violations"] == ["sword-like background reflection"]
+    assert observed["state"]["object_graph"] == ["scabbard: separate dark sheath at upper-left"]
+    assert observed["state"]["contact_graph"] == ["left_hand -> scabbard"]
+    assert observed["state"]["viewer_contact_graph"] == ["viewer_left_hand -> katana_handle"]
+    assert observed["state"]["anatomical_contact_graph"] == [
+        "character_right_hand -> katana_handle"
+    ]
+    assert observed["state"]["pose_intent"] == "unsheathing / draw-pose"
+    assert observed["state"]["failure_modes"] == ["left hand grips the wrong object"]
+    assert "expected_identity" in observed["state"]
+
+
+def test_audit_image_ignores_bad_generation_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    monkeypatch.setenv("DEFAULT_PLANNER_MODEL", "not-a-planner")
+    monkeypatch.setenv("DEFAULT_IMAGE_BACKEND", "not-an-image-backend")
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-violation",
+            "sword-like background reflection",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Image RPE audit written" in result.output
+
+
+def test_audit_image_with_repair_writes_proposed_svp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-violation",
+            "sword-like background reflection",
+            "--audit-repair",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Proposed SVP" in result.output
+    assert list(tmp_path.glob("audit-*/repair-*/target_svp.proposed.json"))
+
+
+def test_audit_image_with_compare_writes_visual_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    source = tmp_path / "source.png"
+    candidate = tmp_path / "candidate.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(source)
+    _write_png(candidate)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(source),
+            "--compare-image",
+            str(candidate),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Visual comparison" in result.output
+    comparison = list(tmp_path.glob("audit-*/visual_comparison.json"))
+    assert len(comparison) == 1
+    payload = json.loads(comparison[0].read_text(encoding="utf-8"))
+    assert payload["dimensions_equal"] is True
+    assert payload["pixel_rms"] == 0.0
+
+
+def test_audit_regenerate_requires_repair(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-regenerate",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--audit-regenerate requires --audit-repair" in result.output
+
+
+def test_audit_repair_regenerate_writes_pipeline_output_and_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    source = tmp_path / "source.png"
+    target = tmp_path / "target.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(source, color=(10, 10, 10))
+    _write_png(target, color=(20, 20, 20))
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(source),
+            "--compare-image",
+            str(target),
+            "--audit-missing",
+            "glowing lavender eyes from the target image",
+            "--audit-repair",
+            "--audit-regenerate",
+            "--no-video",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Regenerated image" in result.output
+    assert "Regenerated visual comparison" in result.output
+    audit_dirs = list(tmp_path.glob("audit-*"))
+    assert len(audit_dirs) == 1
+    proposed_svp = next(audit_dirs[0].glob("repair-*/target_svp.proposed.json"))
+    assert FakePipeline.instances[-1].run_calls[0]["from_svp_path"] == proposed_svp
+    assert list(audit_dirs[0].glob("regenerated/20260425-000000/image.png"))
+    comparison = audit_dirs[0] / "regenerated_comparison" / "visual_comparison.json"
+    assert comparison.exists()
+    payload = json.loads(comparison.read_text(encoding="utf-8"))
+    assert payload["source_image"]["path"].endswith("source_image.png")
+    assert payload["candidate_image"]["path"].endswith("candidate_image.png")
+
+
+def test_openai_audit_requires_openai_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-backend",
+            "openai",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "OPENAI_API_KEY is required" in result.output
+
+
+def test_audit_image_rejects_unreadable_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    image.write_text("not an image", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "not a readable image" in result.output
+
+
+def test_audit_flags_require_audit_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--audit-contact-graph", "left_hand -> scabbard", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "Audit options require --audit-image" in result.output
+
+
+def test_compare_image_requires_audit_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+    candidate = tmp_path / "candidate.png"
+    candidate.write_bytes(TINY_PNG_BYTES)
+
+    result = runner.invoke(
+        app,
+        ["prompt", "--compare-image", str(candidate), "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "Audit options require --audit-image" in result.output
 
 
 def test_reference_image_flag_passes_path(

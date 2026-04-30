@@ -84,6 +84,162 @@ def _collect_required(svp: SVPVideo) -> list[tuple[str, str]]:
     return items
 
 
+def _collect_critical_pose_geometry(svp: SVPVideo) -> dict[str, list[str]]:
+    """Extract RPE-derived object/contact geometry and expand it for image models."""
+    object_states = _filter_prefixed(
+        svp.c3.constraints.required,
+        "Object state must be preserved:",
+    )
+    contact_graph = _filter_prefixed(
+        svp.c3.constraints.required,
+        "Contact graph must be preserved:",
+    )
+    viewer_contact_graph = _filter_prefixed(
+        svp.c3.constraints.required,
+        "Viewer contact graph must be preserved:",
+    )
+    anatomical_contact_graph = _filter_prefixed(
+        svp.c3.constraints.required,
+        "Anatomical contact graph must be preserved:",
+    )
+    pose_intents = _filter_prefixed(
+        svp.pose_layer.contact_points,
+        "RPE pose intent:",
+    )
+    contact_points = _filter_prefixed(
+        svp.pose_layer.contact_points,
+        "RPE contact graph:",
+    )
+    viewer_contact_points = _filter_prefixed(
+        svp.pose_layer.contact_points,
+        "RPE viewer contact graph:",
+    )
+    anatomical_contact_points = _filter_prefixed(
+        svp.pose_layer.contact_points,
+        "RPE anatomical contact graph:",
+    )
+    failures = _filter_prefixed(
+        [
+            *svp.pose_layer.constraints.forbidden,
+            *svp.c3.evaluation_criteria.critical_fail_conditions,
+        ],
+        "Observed visual-state failure must not recur:",
+    )
+    observed_failures = _filter_prefixed(
+        svp.c3.evaluation_criteria.critical_fail_conditions,
+        "Observed failure:",
+    )
+    failures = _dedupe_keep_order([*failures, *observed_failures])
+    expanded = _expand_pose_geometry(
+        object_states=object_states,
+        contact_graph=_dedupe_keep_order([*contact_graph, *contact_points]),
+        viewer_contact_graph=_dedupe_keep_order(
+            [*viewer_contact_graph, *viewer_contact_points]
+        ),
+        anatomical_contact_graph=_dedupe_keep_order(
+            [*anatomical_contact_graph, *anatomical_contact_points]
+        ),
+        pose_intents=pose_intents,
+        failures=failures,
+    )
+    if not any(expanded.values()):
+        return {}
+    return expanded
+
+
+def _filter_prefixed(items: Iterable[str], prefix: str) -> list[str]:
+    values: list[str] = []
+    for item in items:
+        stripped = item.strip()
+        if stripped.startswith(prefix):
+            values.append(stripped.removeprefix(prefix).strip())
+    return _dedupe_keep_order(values)
+
+
+def _expand_pose_geometry(
+    *,
+    object_states: list[str],
+    contact_graph: list[str],
+    viewer_contact_graph: list[str],
+    anatomical_contact_graph: list[str],
+    pose_intents: list[str],
+    failures: list[str],
+) -> dict[str, list[str]]:
+    required: list[str] = []
+    avoid: list[str] = []
+    if pose_intents:
+        joined = "; ".join(pose_intents)
+        required.append(f"Pose intent: {joined}. This pose intent overrides generic grip poses.")
+        if _mentions_any(joined, ("unsheathing", "draw-pose", "draw pose")):
+            required.append(
+                "This is an unsheathing / draw-pose, not a two-handed guard stance."
+            )
+            avoid.append("Do not convert the draw-pose into both hands gripping the same blade.")
+
+    for item in object_states:
+        required.append(f"Object role: {item}.")
+        if _mentions_any(item, ("scabbard", "sheath")):
+            required.append(
+                "The scabbard/sheath must remain a separate dark object, not fused with the blade."
+            )
+        if _mentions_any(item, ("katana_blade", "blade")):
+            required.append(
+                "The katana blade must read as one single drawn glowing blade."
+            )
+
+    for item in contact_graph:
+        required.append(f"Required contact relation: {item}.")
+        lowered = item.lower()
+        if "left_hand" in lowered and _mentions_any(lowered, ("scabbard", "sheath")):
+            required.append(
+                "Left hand grips only the separate scabbard/sheath; it does not grip the "
+                "glowing blade or the same handle as the right hand."
+            )
+        if "right_hand" in lowered and _mentions_any(lowered, ("handle", "katana")):
+            required.append("Right hand grips the katana handle near the guard.")
+
+    for item in viewer_contact_graph:
+        required.append(
+            f"Viewer-relative contact relation: {item}. "
+            "This describes where the contact appears in the image, not anatomy."
+        )
+        lowered = item.lower()
+        if "viewer_left" in lowered:
+            required.append(
+                "On the viewer-left side of the image, preserve this hand/object contact."
+            )
+        if "viewer_right" in lowered:
+            required.append(
+                "On the viewer-right side of the image, preserve this hand/object contact."
+            )
+
+    for item in anatomical_contact_graph:
+        required.append(
+            f"Anatomical contact relation: {item}. "
+            "This describes the character's body side, not screen position."
+        )
+
+    if viewer_contact_graph or anatomical_contact_graph:
+        required.append(
+            "Do not swap viewer-left/viewer-right with anatomical-left/anatomical-right; "
+            "keep both coordinate systems consistent."
+        )
+        avoid.append("Do not mirror or swap the specified hand/object roles.")
+
+    for item in failures:
+        avoid.append(item)
+
+    return {
+        "required": _dedupe_keep_order(required),
+        "avoid": _dedupe_keep_order(avoid),
+    }
+
+
+def _mentions_any(text: str, needles: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(needle in lowered for needle in needles)
+
+
 def _collect_motion_forbidden(svp: SVPVideo) -> list[str]:
     merged: list[str] = []
     merged.extend(svp.motion_layer.constraints.forbidden)
@@ -115,6 +271,7 @@ def render_image_prompt(svp: SVPVideo) -> str:
     por_core_text = ", ".join(svp.por_core)
     grv_anchor_text = ", ".join(svp.grv_anchor)
     required_items = _collect_required(svp)
+    critical_pose_geometry = _collect_critical_pose_geometry(svp)
     avoid_items = _collect_forbidden(svp)
     avoid_text = ", ".join(avoid_items) if avoid_items else "None"
 
@@ -169,6 +326,32 @@ def render_image_prompt(svp: SVPVideo) -> str:
         "## Pose",
         *_render_pose_block(svp),
         "",
+        ]
+    )
+
+    if critical_pose_geometry:
+        lines.extend(
+            [
+                "## Critical Pose Geometry",
+                (
+                    "These RPE-derived object/contact constraints are high priority. "
+                    "They override generic pose interpretation:"
+                ),
+            ]
+        )
+        lines.extend(f"- {item}" for item in critical_pose_geometry.get("required", []))
+        if critical_pose_geometry.get("avoid"):
+            lines.extend(
+                [
+                    "",
+                    "Critical pose failures to avoid:",
+                    *(f"- {item}" for item in critical_pose_geometry["avoid"]),
+                ]
+            )
+        lines.append("")
+
+    lines.extend(
+        [
         "## Color & Texture",
         f"- Colors: {', '.join(svp.color_axis)}",
         f"- Textures: {', '.join(svp.texture_axis)}",
