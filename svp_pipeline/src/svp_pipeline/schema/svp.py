@@ -218,6 +218,11 @@ class ReferenceUsagePolicy(BaseModel):
             "no compression-like speckles",
         ]
     )
+    failure_preset_ids: list[str] = Field(default_factory=list)
+    render_priority: list[str] = Field(default_factory=list)
+    conflict_resolution: list[str] = Field(default_factory=list)
+    positive_anchors: list[str] = Field(default_factory=list)
+    negative_anchors: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

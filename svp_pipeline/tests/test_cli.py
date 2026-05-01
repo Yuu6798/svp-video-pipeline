@@ -81,6 +81,7 @@ class FakePipeline:
         from_svp_path: Path | None = None,
         reuse_run_dir: Path | None = None,
         reuse_image: str | None = None,
+        failure_presets: list[str | Path] | None = None,
         progress_callback=None,
     ) -> PipelineResult:
         self.run_calls.append(
@@ -94,6 +95,7 @@ class FakePipeline:
                 "from_svp_path": from_svp_path,
                 "reuse_run_dir": reuse_run_dir,
                 "reuse_image": reuse_image,
+                "failure_presets": failure_presets,
             }
         )
         if FakePipeline.error is not None:
@@ -178,6 +180,7 @@ def test_help_shows_all_options() -> None:
         "--from-svp",
         "--reuse-run",
         "--reuse-image",
+        "--failure-preset",
         "--audit-image",
         "--audit-backend",
         "--compare-image",
@@ -187,6 +190,7 @@ def test_help_shows_all_options() -> None:
         "viewer",
         "pose",
         "failure",
+        "failure-preset",
         "regenerate",
         "--verbose",
         "--version",
@@ -412,6 +416,30 @@ def test_backend_selection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     assert result.exit_code == 0
     assert FakePipeline.instances[0].kwargs["image_backend"] == "openai"
+
+
+def test_failure_preset_flag_passes_to_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_required_keys(monkeypatch)
+
+    result = runner.invoke(
+        app,
+        [
+            "prompt",
+            "--failure-preset",
+            "single-character-weapon-clean-bg",
+            "--no-video",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["failure_presets"] == [
+        "single-character-weapon-clean-bg"
+    ]
 
 
 def test_from_svp_skips_anthropic_key_requirement(
@@ -739,6 +767,68 @@ def test_audit_image_with_repair_writes_proposed_svp(
     assert result.exit_code == 0
     assert "Proposed SVP" in result.output
     assert list(tmp_path.glob("audit-*/repair-*/target_svp.proposed.json"))
+
+
+def test_audit_image_with_repair_extracts_failure_preset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--audit-violation",
+            "katana reflection appears as a second sword in the wet background",
+            "--audit-repair",
+            "--extract-failure-preset",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Failure preset candidate" in result.output
+    candidates = list(tmp_path.glob("audit-*/repair-*/failure_preset.candidate.json"))
+    assert len(candidates) == 1
+    payload = json.loads(candidates[0].read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "SVP.failure_preset.v1"
+    assert payload["failure_taxonomy"]
+
+
+def test_extract_failure_preset_requires_audit_repair(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_required_keys(monkeypatch)
+    svp_path = tmp_path / "source.svp.json"
+    image = tmp_path / "image.png"
+    svp_path.write_text(_load("shibuya_dusk.json").model_dump_json(), encoding="utf-8")
+    _write_png(image)
+
+    result = runner.invoke(
+        app,
+        [
+            "--from-svp",
+            str(svp_path),
+            "--audit-image",
+            str(image),
+            "--extract-failure-preset",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--extract-failure-preset requires --audit-repair" in result.output
 
 
 def test_audit_image_with_compare_writes_visual_comparison(

@@ -26,6 +26,10 @@ from .exceptions import (
     VideoTimeoutError,
 )
 from .pipeline import Pipeline, PipelineResult
+from .semantic.failure_presets import (
+    extract_failure_preset_candidate,
+    write_failure_preset_candidate,
+)
 from .semantic.image_audit import ImageAuditResult, audit_image_to_observed_rpe
 from .semantic.repair import RepairResult, repair_svp_from_observed_rpe
 from .semantic.visual_compare import (
@@ -110,6 +114,11 @@ def main(
         "--repair-from-rpe",
         help="Observed RPE JSON used to write semantic_diff and target_svp.proposed.json.",
     ),
+    failure_preset: list[str] | None = typer.Option(
+        None,
+        "--failure-preset",
+        help="Failure preset id or JSON path to apply before image generation. Repeatable.",
+    ),
     audit_image: Path | None = typer.Option(
         None,
         "--audit-image",
@@ -186,6 +195,11 @@ def main(
         "--audit-repair",
         help="After --audit-image, also write semantic diff and target_svp.proposed.json.",
     ),
+    extract_failure_preset: bool = typer.Option(
+        False,
+        "--extract-failure-preset",
+        help="After --audit-repair, also write failure_preset.candidate.json.",
+    ),
     audit_regenerate: bool = typer.Option(
         False,
         "--audit-regenerate",
@@ -251,10 +265,14 @@ def main(
         audit_note=audit_note,
         audit_repair=audit_repair,
         audit_regenerate=audit_regenerate,
+        extract_failure_preset=extract_failure_preset,
     )
     if audit_image is not None:
         if audit_regenerate and not audit_repair:
             console.print("[red]--audit-regenerate requires --audit-repair[/red]")
+            raise typer.Exit(1)
+        if extract_failure_preset and not audit_repair:
+            console.print("[red]--extract-failure-preset requires --audit-repair[/red]")
             raise typer.Exit(1)
         _check_audit_options(
             image_path=audit_image,
@@ -299,6 +317,7 @@ def main(
                 notes=audit_note or [],
             )
             repair_result = None
+            failure_preset_candidate_path = None
             comparison_result = None
             regeneration_result = None
             regeneration_comparison_result = None
@@ -316,6 +335,11 @@ def main(
                     reuse_run=reuse_run,
                     output_dir=audit_result.output_dir,
                 )
+                if extract_failure_preset:
+                    failure_preset_candidate_path = _write_failure_preset_candidate(
+                        audit_result=audit_result,
+                        repair_result=repair_result,
+                    )
             if audit_regenerate:
                 assert repair_result is not None
                 regeneration_result = _run_regeneration_from_repair(
@@ -332,6 +356,7 @@ def main(
                     reference_image=reference_image,
                     reference_crop=reference_crop,
                     separate_character_bg=separate_character_bg,
+                    failure_presets=failure_preset or [],
                     verbose=verbose,
                 )
                 if compare_image is not None and regeneration_result.image_path is not None:
@@ -354,6 +379,7 @@ def main(
         _print_audit_summary(
             audit_result,
             repair_result=repair_result,
+            failure_preset_candidate_path=failure_preset_candidate_path,
             comparison_result=comparison_result,
             regeneration_result=regeneration_result,
             regeneration_comparison_result=regeneration_comparison_result,
@@ -424,6 +450,7 @@ def main(
             from_svp=from_svp,
             reuse_run=reuse_run,
             reuse_image=reuse_image,
+            failure_presets=failure_preset or [],
             verbose=verbose,
         )
         if logger is not None:
@@ -435,7 +462,7 @@ def main(
             else:
                 archive_result = _archive_outputs_to_drive(result)
                 _print_archive_summary(archive_result)
-    except (SVPPipelineError, ValueError, RuntimeError) as exc:
+    except (SVPPipelineError, ValueError, RuntimeError, FileNotFoundError) as exc:
         _handle_error(exc, verbose=verbose)
         raise typer.Exit(1) from exc
     except KeyboardInterrupt:
@@ -637,6 +664,7 @@ def _check_audit_flags_require_image(
     audit_note: list[str] | None,
     audit_repair: bool,
     audit_regenerate: bool,
+    extract_failure_preset: bool,
 ) -> None:
     if audit_image is not None:
         return
@@ -658,6 +686,7 @@ def _check_audit_flags_require_image(
         )
         or audit_repair
         or audit_regenerate
+        or extract_failure_preset
     ):
         console.print("[red]Audit options require --audit-image[/red]")
         raise typer.Exit(1)
@@ -695,6 +724,26 @@ def _run_repair_from_rpe(
         observed_rpe_path=observed_rpe,
         output_root=output_dir,
     )
+
+
+def _write_failure_preset_candidate(
+    *,
+    audit_result: ImageAuditResult,
+    repair_result: RepairResult,
+) -> Path:
+    preset = extract_failure_preset_candidate(
+        observed=audit_result.observed_rpe,
+        diff=repair_result.diff,
+        source={
+            "observed_rpe": str(audit_result.observed_rpe_path),
+            "semantic_diff": str(repair_result.semantic_diff_path),
+            "proposed_svp": str(repair_result.proposed_svp_path),
+        },
+        preset_id="candidate",
+    )
+    candidate_path = repair_result.output_dir / "failure_preset.candidate.json"
+    write_failure_preset_candidate(candidate_path, preset)
+    return candidate_path
 
 
 def _run_image_audit(
@@ -766,6 +815,7 @@ def _run_regeneration_from_repair(
     reference_image: Path | None,
     reference_crop: int | None,
     separate_character_bg: bool,
+    failure_presets: list[str],
     verbose: bool,
 ) -> PipelineResult:
     pipeline = Pipeline(
@@ -787,6 +837,7 @@ def _run_regeneration_from_repair(
         from_svp=repair_result.proposed_svp_path,
         reuse_run=None,
         reuse_image=None,
+        failure_presets=failure_presets,
         verbose=verbose,
     )
 
@@ -794,6 +845,7 @@ def _run_regeneration_from_repair(
 def _print_audit_summary(
     result: ImageAuditResult,
     repair_result: RepairResult | None,
+    failure_preset_candidate_path: Path | None,
     comparison_result: VisualComparisonResult | None,
     regeneration_result: PipelineResult | None = None,
     regeneration_comparison_result: VisualComparisonResult | None = None,
@@ -812,6 +864,8 @@ def _print_audit_summary(
         console.print(f"Proposed SVP: {repair_result.proposed_svp_path}")
         console.print(f"Gate status: {repair_result.diff.gate_status}")
         console.print(f"Issues: {len(repair_result.diff.issues)}")
+    if failure_preset_candidate_path is not None:
+        console.print(f"Failure preset candidate: {failure_preset_candidate_path}")
     if comparison_result is not None:
         console.print(f"Candidate image: {comparison_result.candidate_image_path}")
         console.print(f"Visual comparison: {comparison_result.comparison_path}")
@@ -850,6 +904,7 @@ def _run_with_progress(
     from_svp: Path | None,
     reuse_run: Path | None,
     reuse_image: str | None,
+    failure_presets: list[str],
     verbose: bool,
 ) -> PipelineResult:
     logger = setup_verbose_logger() if verbose else None
@@ -870,6 +925,7 @@ def _run_with_progress(
             from_svp_path=from_svp,
             reuse_run_dir=reuse_run,
             reuse_image=reuse_image,
+            failure_presets=failure_presets,
             progress_callback=_progress,
         )
 
