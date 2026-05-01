@@ -18,6 +18,7 @@ from .generator.image_openai import OpenAIImageBackend
 from .generator.planner import Planner, PlannerModel
 from .generator.video import VideoGenerator, VideoResolution
 from .schema import SVPVideo
+from .semantic.failure_presets import apply_failure_presets_to_svp
 from .utils.logging import write_log_json
 
 ProgressCallback = Callable[[str, dict[str, Any]], None]
@@ -96,6 +97,7 @@ class Pipeline:
         from_svp_path: Path | None = None,
         reuse_run_dir: Path | None = None,
         reuse_image: str | None = None,
+        failure_presets: list[str | Path] | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> PipelineResult:
         total_started = time.perf_counter()
@@ -153,6 +155,10 @@ class Pipeline:
                 "model": planner_model_for_log,
                 "source": str(svp_source_path),
             }
+
+        applied_failure_presets = [str(item) for item in (failure_presets or [])]
+        if failure_presets:
+            svp = apply_failure_presets_to_svp(svp, list(failure_presets))
 
         svp_path = run_dir / "svp.json"
         svp_path.write_text(svp.model_dump_json(indent=2), encoding="utf-8")
@@ -432,6 +438,7 @@ class Pipeline:
                 else None,
                 "reference_crop": reference_crop,
                 "separate_character_bg": separate_character_bg,
+                "failure_presets": applied_failure_presets,
                 "effective_reference_image": str(effective_reference_image_path)
                 if effective_reference_image_path is not None
                 else None,

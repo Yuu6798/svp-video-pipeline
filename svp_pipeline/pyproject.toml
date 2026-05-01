@@ -41,6 +41,9 @@ drive = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/svp_pipeline"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/svp_pipeline/presets" = "svp_pipeline/presets"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

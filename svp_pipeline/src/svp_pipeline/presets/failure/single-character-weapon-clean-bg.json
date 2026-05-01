@@ -1,0 +1,89 @@
+{
+  "schema_version": "SVP.failure_preset.v1",
+  "id": "single-character-weapon-clean-bg",
+  "source": {
+    "origin": "manual",
+    "rationale": "Prevents duplicate character identity and weapon residue in reference-image regeneration."
+  },
+  "applicability": {
+    "subject_count": "single_character",
+    "object_classes": [
+      "weapon"
+    ],
+    "background_type": "neon_city",
+    "reference_image_mode": true,
+    "notes": [
+      "Use when a single foreground character with a katana/sword contaminates background signage, holograms, or reflections."
+    ]
+  },
+  "failure_taxonomy": [
+    {
+      "type": "duplicate_identity_in_background",
+      "object": "character",
+      "region": "background",
+      "severity": "critical",
+      "repair_strategy": "keep exactly one foreground character and remove identity-like background copies"
+    },
+    {
+      "type": "weapon_residue_in_background",
+      "object": "weapon",
+      "region": "background/reflection",
+      "severity": "critical",
+      "repair_strategy": "keep the weapon as one foreground object and suppress weapon-like background residue"
+    },
+    {
+      "type": "hand_object_contact_confusion",
+      "object": "hands/weapon",
+      "region": "foreground",
+      "severity": "critical",
+      "repair_strategy": "prioritize explicit character-body-side contact graph over visual guesswork"
+    }
+  ],
+  "object_instance_rules": [
+    "character: exactly one visible instance, foreground only",
+    "katana or sword: exactly one foreground object only",
+    "no weapon-like silhouettes, signage, reflections, shadows, or repeated motifs in the background",
+    "preserve anatomical left/right hand assignments exactly as written",
+    "do not swap viewer-left/viewer-right with character-left/character-right",
+    "hands must contact only their assigned object parts"
+  ],
+  "background_quality_rules": [
+    "background may contain abstract neon signage but no human face billboard",
+    "no portrait hologram, character-shaped signage, or second character silhouette",
+    "wet reflections must be smooth color reflections, not blade-shaped reflections",
+    "background simplicity has higher priority than background detail",
+    "simplify or blur background details that resemble weapons",
+    "prefer smooth organized composition over dense distant micro-details"
+  ],
+  "do_not_copy_from_reference": [
+    "do not copy the reference character into background signage, holograms, billboards, or reflections",
+    "do not repeat katana or weapon motifs in background signage or wet reflections"
+  ],
+  "render_priority": [
+    "character_identity",
+    "pose_contact_graph",
+    "object_instance_integrity",
+    "lighting_atmosphere",
+    "wet_reflections",
+    "background_simplicity",
+    "background_detail"
+  ],
+  "conflict_resolution": [
+    "If background detail conflicts with object integrity, prefer object integrity.",
+    "If wet reflections create object residue, simplify or blur the reflection."
+  ],
+  "positive_anchors": [
+    "one foreground character with the intended face, hair, outfit, and pose",
+    "single foreground weapon attached to the intended hand/contact point",
+    "explicit anatomical hand-object contact graph"
+  ],
+  "negative_anchors": [
+    "background face copies",
+    "portrait holograms",
+    "extra character silhouettes",
+    "weapon-shaped floor reflections",
+    "background sword symbols",
+    "extra blade trails",
+    "swapped hand roles"
+  ]
+}

@@ -425,11 +425,41 @@ def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
         "",
         "Background quality rules:",
         *(f"- {item}" for item in policy.background_quality_rules),
-        (
-            "Generate a single final image, not a collage, contact sheet, "
-            "split panel, or numbered panel layout."
-        ),
     ]
+    if (
+        policy.failure_preset_ids
+        or policy.positive_anchors
+        or policy.negative_anchors
+        or policy.render_priority
+        or policy.conflict_resolution
+    ):
+        lines.extend(
+            [
+                "",
+                "## Failure Prevention Presets",
+                "Active preset ids:",
+                *(
+                    f"- {preset_id}"
+                    for preset_id in (policy.failure_preset_ids or ["none"])
+                ),
+            ]
+        )
+        if policy.positive_anchors:
+            lines.extend(["", "Positive anchors to preserve:"])
+            lines.extend(f"- {item}" for item in policy.positive_anchors)
+        if policy.negative_anchors:
+            lines.extend(["", "Negative anchors to suppress:"])
+            lines.extend(f"- {item}" for item in policy.negative_anchors)
+        if policy.render_priority:
+            lines.extend(["", "Render priority:"])
+            lines.append(" > ".join(policy.render_priority))
+        if policy.conflict_resolution:
+            lines.extend(["", "Conflict resolution rules:"])
+            lines.extend(f"- {item}" for item in policy.conflict_resolution)
+    lines.append(
+        "Generate a single final image, not a collage, contact sheet, "
+        "split panel, or numbered panel layout."
+    )
     return "\n".join(lines).strip()
 
 
