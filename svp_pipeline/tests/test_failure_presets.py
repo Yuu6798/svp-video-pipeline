@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+import svp_pipeline.semantic.failure_presets as failure_presets_mod
 from svp_pipeline.schema import SVPVideo
 from svp_pipeline.semantic.failure_presets import (
     apply_failure_preset_to_svp,
@@ -58,6 +61,26 @@ def test_extract_does_not_hardcode_neon_city_for_unknown_background() -> None:
     preset = extract_failure_preset_candidate(observed, SemanticDiffReport())
 
     assert preset.applicability.background_type is None
+
+
+def test_extract_background_simplicity_does_not_match_city_substring() -> None:
+    observed = ObservedRPE(
+        violations=[
+            "katana reflection appears as a second sword; background simplicity is desired"
+        ],
+    )
+    preset = extract_failure_preset_candidate(observed, SemanticDiffReport())
+
+    assert preset.applicability.background_type is None
+
+
+def test_extract_neon_city_matches_word_boundaries() -> None:
+    observed = ObservedRPE(
+        violations=["katana reflection appears in a neon city background"],
+    )
+    preset = extract_failure_preset_candidate(observed, SemanticDiffReport())
+
+    assert preset.applicability.background_type == "neon_city"
 
 
 def test_extract_contact_graph_preset() -> None:
@@ -117,6 +140,32 @@ def test_load_builtin_failure_preset() -> None:
 
     dumped = json.loads(preset.model_dump_json())
     assert dumped["schema_version"] == "SVP.failure_preset.v1"
+    assert preset.id == "single-character-weapon-clean-bg"
+
+
+def test_load_builtin_failure_preset_reads_traversable(monkeypatch: pytest.MonkeyPatch) -> None:
+    content = load_failure_preset("single-character-weapon-clean-bg").model_dump_json()
+
+    class FakePresetResource:
+        def is_file(self) -> bool:
+            return True
+
+        def read_text(self, encoding: str = "utf-8") -> str:
+            assert encoding == "utf-8"
+            return content
+
+    class FakePackageResource:
+        def joinpath(self, _name: str) -> FakePresetResource:
+            return FakePresetResource()
+
+    monkeypatch.setattr(
+        failure_presets_mod.resources,
+        "files",
+        lambda _package: FakePackageResource(),
+    )
+
+    preset = load_failure_preset("single-character-weapon-clean-bg")
+
     assert preset.id == "single-character-weapon-clean-bg"
 
 

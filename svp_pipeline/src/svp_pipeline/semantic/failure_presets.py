@@ -8,7 +8,9 @@ must opt in by passing a preset id or JSON path.
 from __future__ import annotations
 
 import json
+import re
 from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -124,11 +126,11 @@ def write_failure_preset_candidate(path: Path, preset: FailurePresetCandidate) -
 def load_failure_preset(identifier_or_path: str | Path) -> FailurePresetCandidate:
     """Load a failure preset by JSON path or built-in preset id."""
 
-    path = _resolve_preset_path(identifier_or_path)
+    source = _resolve_preset_source(identifier_or_path)
     try:
-        return FailurePresetCandidate.model_validate_json(path.read_text(encoding="utf-8"))
+        return FailurePresetCandidate.model_validate_json(source.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid failure preset JSON: {path}") from exc
+        raise ValueError(f"Invalid failure preset JSON: {source}") from exc
 
 
 def apply_failure_presets_to_svp(
@@ -280,13 +282,42 @@ def _has_background_noise_failure(blob: str) -> bool:
 
 
 def _infer_background_type(blob: str) -> str | None:
-    if any(term in blob for term in ("neon", "city", "shibuya", "urban", "都市", "街")):
+    if _contains_any_background_term(
+        blob,
+        ascii_terms=("neon", "city", "shibuya", "urban"),
+        non_ascii_terms=("都市", "街"),
+    ):
         return "neon_city"
-    if any(term in blob for term in ("forest", "woods", "tree", "森", "林")):
+    if _contains_any_background_term(
+        blob,
+        ascii_terms=("forest", "woods", "tree"),
+        non_ascii_terms=("森", "林"),
+    ):
         return "forest"
-    if any(term in blob for term in ("interior", "room", "indoor", "室内", "部屋")):
+    if _contains_any_background_term(
+        blob,
+        ascii_terms=("interior", "room", "indoor"),
+        non_ascii_terms=("室内", "部屋"),
+    ):
         return "interior"
     return None
+
+
+def _contains_any_background_term(
+    blob: str,
+    *,
+    ascii_terms: tuple[str, ...],
+    non_ascii_terms: tuple[str, ...],
+) -> bool:
+    return any(_contains_ascii_word(blob, term) for term in ascii_terms) or any(
+        term in blob for term in non_ascii_terms
+    )
+
+
+def _contains_ascii_word(blob: str, term: str) -> bool:
+    """Match ASCII keywords without matching substrings like 'simplicity'."""
+
+    return re.search(rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])", blob) is not None
 
 
 def _add_duplicate_identity_rules(
@@ -455,7 +486,7 @@ def _add_background_simplicity_rules(preset: FailurePresetCandidate) -> None:
     )
 
 
-def _resolve_preset_path(identifier_or_path: str | Path) -> Path:
+def _resolve_preset_source(identifier_or_path: str | Path) -> Path | Traversable:
     path = Path(identifier_or_path)
     if path.is_file():
         return path
@@ -473,7 +504,7 @@ def _resolve_preset_path(identifier_or_path: str | Path) -> Path:
         except ModuleNotFoundError:
             candidate = None
         if candidate is not None and candidate.is_file():
-            return Path(str(candidate))
+            return candidate
 
     raise FileNotFoundError(f"Failure preset not found: {identifier_or_path}")
 
