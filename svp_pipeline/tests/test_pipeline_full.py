@@ -57,6 +57,7 @@ class FakeVideoGenerator:
         self.tier = tier
         self.fail_download = fail_download
         self.calls: list[tuple[str, str, int]] = []
+        self.image_paths: list[Path] = []
 
     def generate(
         self,
@@ -66,6 +67,7 @@ class FakeVideoGenerator:
         resolution: str = "720p",
     ) -> VideoResult:
         self.calls.append((self.tier, resolution, svp.motion_layer.duration_seconds))
+        self.image_paths.append(image_path)
         if self.fail_download:
             raise VideoDownloadError(
                 "download failed",
@@ -273,3 +275,28 @@ def test_dry_run_default_includes_video_estimate(tmp_path: Path) -> None:
     assert log_data["stages"]["video"]["status"] == "skipped_dry_run"
     assert log_data["stages"]["video"]["estimated_cost_usd"] == pytest.approx(1.512)
     assert result.total_cost_usd == pytest.approx(0.012 + 0.08 + 1.512)
+
+
+def test_full_pipeline_reuses_existing_image_for_video(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    (source_run / "svp.json").write_text(svp.model_dump_json(indent=2), encoding="utf-8")
+    source_image = source_run / "image.png"
+    source_image.write_bytes(TINY_PNG_BYTES)
+    fake_video = FakeVideoGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        video_generator=fake_video,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("reuse full prompt", reuse_run_dir=source_run)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert result.image_path is not None
+    assert result.video_path is not None
+    assert fake_video.image_paths == [result.image_path]
+    assert result.image_path.read_bytes() == source_image.read_bytes()
+    assert log_data["stages"]["planner"]["status"] == "reused"
+    assert log_data["stages"]["image"]["status"] == "reused"
+    assert log_data["stages"]["video"]["status"] == "ok"

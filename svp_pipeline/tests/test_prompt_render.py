@@ -101,6 +101,46 @@ def test_render_includes_required_constraints() -> None:
     assert "REQ_MOTION_UNIQUE_SHOULD_NOT_RENDER" not in prompt
 
 
+def test_render_promotes_rpe_contact_graph_to_critical_pose_geometry() -> None:
+    svp = _load("shibuya_dusk.json")
+    payload = copy.deepcopy(svp.model_dump())
+    payload["c3"]["constraints"]["required"] = [
+        "Object state must be preserved: katana_blade: single glowing drawn blade",
+        "Object state must be preserved: scabbard: separate dark sheath at upper-left",
+        "Contact graph must be preserved: right_hand -> katana_handle",
+        "Contact graph must be preserved: left_hand -> scabbard",
+        "Viewer contact graph must be preserved: viewer_left_hand -> katana_handle",
+        "Anatomical contact graph must be preserved: character_right_hand -> katana_handle",
+    ]
+    payload["pose_layer"]["contact_points"] = [
+        "RPE contact graph: right_hand -> katana_handle",
+        "RPE contact graph: left_hand -> scabbard",
+        "RPE viewer contact graph: viewer_left_hand -> katana_handle",
+        "RPE anatomical contact graph: character_right_hand -> katana_handle",
+        "RPE pose intent: unsheathing / draw-pose",
+    ]
+    payload["pose_layer"]["constraints"]["forbidden"] = [
+        "Observed visual-state failure must not recur: blade and scabbard are fused",
+    ]
+    mutated = SVPVideo.model_validate(payload)
+
+    prompt = render_image_prompt(mutated)
+
+    assert "## Critical Pose Geometry" in prompt
+    assert "unsheathing / draw-pose" in prompt
+    assert "not a two-handed guard stance" in prompt
+    assert "Left hand grips only the separate scabbard/sheath" in prompt
+    assert "Right hand grips the katana handle near the guard." in prompt
+    assert "Viewer-relative contact relation: viewer_left_hand -> katana_handle." in prompt
+    assert (
+        "Anatomical contact relation: character_right_hand -> katana_handle."
+        in prompt
+    )
+    assert "Do not swap viewer-left/viewer-right" in prompt
+    assert "one single drawn glowing blade" in prompt
+    assert "blade and scabbard are fused" in prompt
+
+
 def test_render_handles_no_subject() -> None:
     svp = _load("still_life_macro.json")
     prompt = render_image_prompt(svp)

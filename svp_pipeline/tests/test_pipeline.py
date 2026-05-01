@@ -267,6 +267,101 @@ def test_cheap_mode_uses_1k_resolution(tmp_path: Path) -> None:
     assert image.calls[0][1] == "cheap"
 
 
+def test_pipeline_from_svp_skips_planner(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    source_svp = tmp_path / "source.svp.json"
+    source_svp.write_text(svp.model_dump_json(indent=2), encoding="utf-8")
+    planner = FakePlanner(_load("still_life_macro.json"))
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("from svp prompt", no_video=True, from_svp_path=source_svp)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert planner.calls == []
+    assert result.svp.por_identity == svp.por_identity
+    assert log_data["stages"]["planner"]["status"] == "reused"
+    assert log_data["stages"]["planner"]["source"] == str(source_svp)
+    assert log_data["inputs"]["from_svp"] == str(source_svp)
+
+
+def test_pipeline_reuses_existing_run_image_without_planner_or_image_generation(
+    tmp_path: Path,
+) -> None:
+    svp = _load("shibuya_dusk.json")
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    (source_run / "svp.json").write_text(svp.model_dump_json(indent=2), encoding="utf-8")
+    (source_run / "image.png").write_bytes(_valid_png_bytes("blue"))
+    planner = FakePlanner(_load("still_life_macro.json"))
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("reuse run prompt", no_video=True, reuse_run_dir=source_run)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert planner.calls == []
+    assert image.calls == []
+    assert result.image_path is not None
+    assert result.image_path.read_bytes() == (source_run / "image.png").read_bytes()
+    assert log_data["stages"]["planner"]["status"] == "reused"
+    assert log_data["stages"]["image"]["status"] == "reused"
+    assert log_data["stages"]["image"]["source"] == str(source_run / "image.png")
+    assert log_data["total_cost_usd"] == 0.0
+
+
+def test_pipeline_reuses_existing_composite_artifact(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    (source_run / "svp.json").write_text(svp.model_dump_json(indent=2), encoding="utf-8")
+    (source_run / "composite.png").write_bytes(_valid_png_bytes("green"))
+    pipeline = Pipeline(output_dir=tmp_path)
+
+    result = pipeline.run(
+        "reuse composite prompt",
+        no_video=True,
+        reuse_run_dir=source_run,
+        reuse_image="composite",
+    )
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert result.image_path is not None
+    assert result.image_path.read_bytes() == (source_run / "composite.png").read_bytes()
+    assert log_data["stages"]["image"]["native_size_or_resolution"] == "composite"
+    assert log_data["inputs"]["reuse_run"] == str(source_run)
+    assert log_data["inputs"]["reuse_image"] == "composite"
+
+
+def test_dry_run_reuse_run_does_not_estimate_image_cost(tmp_path: Path) -> None:
+    svp = _load("shibuya_dusk.json")
+    source_run = tmp_path / "source-run"
+    source_run.mkdir()
+    (source_run / "svp.json").write_text(svp.model_dump_json(indent=2), encoding="utf-8")
+    (source_run / "image.png").write_bytes(_valid_png_bytes("blue"))
+    pipeline = Pipeline(output_dir=tmp_path, dry_run=True)
+
+    result = pipeline.run(
+        "dry reuse prompt",
+        no_video=True,
+        reuse_run_dir=source_run,
+    )
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    assert log_data["stages"]["planner"]["status"] == "reused"
+    assert log_data["stages"]["image"]["status"] == "reused_dry_run"
+    assert log_data["stages"]["image"]["estimated_cost_usd"] == 0.0
+    assert log_data["total_cost_usd"] == 0.0
+
+
 def test_pipeline_passes_reference_image_to_image_backend(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
     reference_image = tmp_path / "reference.png"
