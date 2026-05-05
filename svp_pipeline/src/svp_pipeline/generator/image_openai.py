@@ -8,7 +8,7 @@ import os
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 
 try:
     from openai import OpenAI, OpenAIError
@@ -26,6 +26,7 @@ from .image_base import ImageResult
 
 OpenAIQuality = Literal["low", "medium", "high", "auto"]
 OpenAISize = Literal["1024x1024", "1536x1024", "1024x1536", "auto"]
+ReferenceFile = tuple[str, bytes, str]
 
 
 class OpenAIImageBackend:
@@ -93,33 +94,79 @@ class OpenAIImageBackend:
         quality_mode: str = "normal",
         reference_image_path: Path | None = None,
     ) -> ImageResult:
-        if quality_mode not in self.QUALITY_MAP:
-            raise ValueError(f"unsupported quality mode: {quality_mode}")
-
-        prompt = render_image_prompt(svp)
-        if reference_image_path is not None:
-            prompt = append_reference_usage_policy(prompt=prompt, svp=svp)
+        quality = self._resolve_quality(quality_mode)
+        prompt = self._render_prompt(svp, reference_image_path)
         size, was_coerced = self._resolve_size(svp.composition_layer.aspect_ratio)
-        quality = self.QUALITY_MAP[quality_mode]
-        reference_file = (
-            self._build_reference_file(reference_image_path)
-            if reference_image_path is not None
-            else None
+        reference_file = self._resolve_reference_file(reference_image_path)
+        self._warn_if_aspect_coerced(
+            svp_aspect_ratio=svp.composition_layer.aspect_ratio,
+            size=size,
+            was_coerced=was_coerced,
         )
-        if was_coerced:
-            warnings.warn(
-                (
-                    "OpenAI gpt-image-2 coerced aspect ratio "
-                    f"{svp.composition_layer.aspect_ratio!r} -> {size!r}"
-                ),
-                UserWarning,
-                stacklevel=2,
-            )
 
         started = time.perf_counter()
+        response = self._request_image(
+            prompt=prompt,
+            size=size,
+            quality=quality,
+            reference_file=reference_file,
+        )
+        png_bytes = self._extract_png_bytes(response)
+        elapsed_sec = time.perf_counter() - started
+        return self._build_result(
+            svp=svp,
+            png_bytes=png_bytes,
+            prompt=prompt,
+            size=size,
+            quality=quality,
+            elapsed_sec=elapsed_sec,
+            was_coerced=was_coerced,
+        )
+
+    def _resolve_quality(self, quality_mode: str) -> OpenAIQuality:
+        quality = self.QUALITY_MAP.get(quality_mode)
+        if quality is None:
+            raise ValueError(f"unsupported quality mode: {quality_mode}")
+        return quality
+
+    @staticmethod
+    def _render_prompt(svp: SVPVideo, reference_image_path: Path | None) -> str:
+        prompt = render_image_prompt(svp)
+        if reference_image_path is not None:
+            return append_reference_usage_policy(prompt=prompt, svp=svp)
+        return prompt
+
+    def _resolve_reference_file(self, reference_image_path: Path | None) -> ReferenceFile | None:
+        if reference_image_path is None:
+            return None
+        return self._build_reference_file(reference_image_path)
+
+    @staticmethod
+    def _warn_if_aspect_coerced(
+        *,
+        svp_aspect_ratio: str,
+        size: OpenAISize,
+        was_coerced: bool,
+    ) -> None:
+        if not was_coerced:
+            return
+        warnings.warn(
+            (f"OpenAI gpt-image-2 coerced aspect ratio {svp_aspect_ratio!r} -> {size!r}"),
+            UserWarning,
+            stacklevel=2,
+        )
+
+    def _request_image(
+        self,
+        *,
+        prompt: str,
+        size: OpenAISize,
+        quality: OpenAIQuality,
+        reference_file: ReferenceFile | None,
+    ) -> Any:
         try:
-            if reference_image_path is None:
-                response = self._client.images.generate(
+            if reference_file is None:
+                return self._client.images.generate(
                     model=self.model,
                     prompt=prompt,
                     size=size,
@@ -127,31 +174,40 @@ class OpenAIImageBackend:
                     n=1,
                     output_format="png",
                 )
-            else:
-                response = self._client.images.edit(
-                    model=self.model,
-                    image=reference_file,
-                    prompt=prompt,
-                    size=size,
-                    quality=quality,
-                    n=1,
-                    output_format="png",
-                )
+            return self._client.images.edit(
+                model=self.model,
+                image=reference_file,
+                prompt=prompt,
+                size=size,
+                quality=quality,
+                n=1,
+                output_format="png",
+            )
         except OpenAIError as exc:
-            if self._is_content_policy_error(exc):
-                raise ImageRefusalError(
-                    "openai image generation refused by content policy"
-                ) from exc
-            if getattr(exc, "status_code", None) == 401:
-                raise ImageAPIError("openai image generation failed: unauthorized (401)") from exc
-            if getattr(exc, "status_code", None) == 429:
-                raise ImageAPIError("openai image generation failed: rate limited (429)") from exc
-            raise ImageAPIError("openai image generation failed") from exc
+            self._raise_wrapped_openai_error(exc)
         except Exception as exc:  # noqa: BLE001
             raise ImageAPIError("openai image generation failed") from exc
 
-        png_bytes = self._extract_png_bytes(response)
-        elapsed_sec = time.perf_counter() - started
+    def _raise_wrapped_openai_error(self, exc: OpenAIError) -> NoReturn:
+        if self._is_content_policy_error(exc):
+            raise ImageRefusalError("openai image generation refused by content policy") from exc
+        if getattr(exc, "status_code", None) == 401:
+            raise ImageAPIError("openai image generation failed: unauthorized (401)") from exc
+        if getattr(exc, "status_code", None) == 429:
+            raise ImageAPIError("openai image generation failed: rate limited (429)") from exc
+        raise ImageAPIError("openai image generation failed") from exc
+
+    def _build_result(
+        self,
+        *,
+        svp: SVPVideo,
+        png_bytes: bytes,
+        prompt: str,
+        size: OpenAISize,
+        quality: OpenAIQuality,
+        elapsed_sec: float,
+        was_coerced: bool,
+    ) -> ImageResult:
         cost = self.COST_PER_IMAGE_USD[(size, quality)]
         return ImageResult(
             png_bytes=png_bytes,
