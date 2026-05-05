@@ -165,6 +165,29 @@ def _expand_pose_geometry(
 ) -> dict[str, list[str]]:
     required: list[str] = []
     avoid: list[str] = []
+    _expand_pose_intents(pose_intents, required, avoid)
+    _expand_object_states(object_states, required)
+    _expand_contact_graph(contact_graph, required)
+    _expand_viewer_contact_graph(viewer_contact_graph, required)
+    _expand_anatomical_contact_graph(anatomical_contact_graph, required)
+    _expand_coordinate_system_rules(
+        viewer_contact_graph=viewer_contact_graph,
+        anatomical_contact_graph=anatomical_contact_graph,
+        required=required,
+        avoid=avoid,
+    )
+    avoid.extend(failures)
+    return {
+        "required": _dedupe_keep_order(required),
+        "avoid": _dedupe_keep_order(avoid),
+    }
+
+
+def _expand_pose_intents(
+    pose_intents: list[str],
+    required: list[str],
+    avoid: list[str],
+) -> None:
     if pose_intents:
         joined = "; ".join(pose_intents)
         required.append(f"Pose intent: {joined}. This pose intent overrides generic grip poses.")
@@ -172,6 +195,8 @@ def _expand_pose_geometry(
             required.append("This is an unsheathing / draw-pose, not a two-handed guard stance.")
             avoid.append("Do not convert the draw-pose into both hands gripping the same blade.")
 
+
+def _expand_object_states(object_states: list[str], required: list[str]) -> None:
     for item in object_states:
         required.append(f"Object role: {item}.")
         if _mentions_any(item, ("scabbard", "sheath")):
@@ -181,6 +206,8 @@ def _expand_pose_geometry(
         if _mentions_any(item, ("katana_blade", "blade")):
             required.append("The katana blade must read as one single drawn glowing blade.")
 
+
+def _expand_contact_graph(contact_graph: list[str], required: list[str]) -> None:
     for item in contact_graph:
         required.append(f"Required contact relation: {item}.")
         lowered = item.lower()
@@ -192,6 +219,8 @@ def _expand_pose_geometry(
         if "right_hand" in lowered and _mentions_any(lowered, ("handle", "katana")):
             required.append("Right hand grips the katana handle near the guard.")
 
+
+def _expand_viewer_contact_graph(viewer_contact_graph: list[str], required: list[str]) -> None:
     for item in viewer_contact_graph:
         required.append(
             f"Viewer-relative contact relation: {item}. "
@@ -207,26 +236,31 @@ def _expand_pose_geometry(
                 "On the viewer-right side of the image, preserve this hand/object contact."
             )
 
+
+def _expand_anatomical_contact_graph(
+    anatomical_contact_graph: list[str],
+    required: list[str],
+) -> None:
     for item in anatomical_contact_graph:
         required.append(
             f"Anatomical contact relation: {item}. "
             "This describes the character's body side, not screen position."
         )
 
+
+def _expand_coordinate_system_rules(
+    *,
+    viewer_contact_graph: list[str],
+    anatomical_contact_graph: list[str],
+    required: list[str],
+    avoid: list[str],
+) -> None:
     if viewer_contact_graph or anatomical_contact_graph:
         required.append(
             "Do not swap viewer-left/viewer-right with anatomical-left/anatomical-right; "
             "keep both coordinate systems consistent."
         )
         avoid.append("Do not mirror or swap the specified hand/object roles.")
-
-    for item in failures:
-        avoid.append(item)
-
-    return {
-        "required": _dedupe_keep_order(required),
-        "avoid": _dedupe_keep_order(avoid),
-    }
 
 
 def _mentions_any(text: str, needles: tuple[str, ...]) -> bool:
