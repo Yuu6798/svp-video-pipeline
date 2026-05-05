@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from ..schema import SVPVideo
+
+if TYPE_CHECKING:
+    from ..schema.svp import ReferenceUsagePolicy
 
 
 def _dedupe_keep_order(items: Iterable[str]) -> list[str]:
@@ -446,58 +450,83 @@ def _render_avoid_section(avoid_items: list[str]) -> list[str]:
 def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
     """Append instructions that constrain how optional reference images are used."""
     policy = svp.reference_usage_policy
+    lines = [prompt.strip()]
+    lines.extend(_render_reference_identity_policy_section(policy))
+    lines.extend(_render_reference_transfer_policy_section(policy))
+    lines.extend(_render_reference_object_policy_section(policy))
+    lines.extend(_render_reference_failure_preset_section(policy))
+    lines.append(_render_single_image_guardrail())
+    return "\n".join(lines).strip()
+
+
+def _render_reference_identity_policy_section(policy: ReferenceUsagePolicy) -> list[str]:
     lines = [
-        prompt.strip(),
         "",
         "## Reference Image Usage Policy",
-        ("If a reference image is provided, use it only for these character identity details:"),
-        *(f"- {item}" for item in policy.use_reference_for),
-        "",
-        "Do not copy these elements from the reference image:",
-        *(f"- {item}" for item in policy.do_not_copy_from_reference),
+        "If a reference image is provided, use it only for these character identity details:",
+    ]
+    lines.extend(f"- {item}" for item in policy.use_reference_for)
+    lines.extend(["", "Do not copy these elements from the reference image:"])
+    lines.extend(f"- {item}" for item in policy.do_not_copy_from_reference)
+    return lines
+
+
+def _render_reference_transfer_policy_section(policy: ReferenceUsagePolicy) -> list[str]:
+    return [
         "",
         f"Background source: {policy.background_source}.",
         f"Identity transfer strength: {policy.identity_strength}.",
         f"Scene/background transfer strength: {policy.scene_transfer_strength}.",
-        "",
-        "Object instance rules:",
-        *(f"- {item}" for item in policy.object_instance_rules),
-        "",
-        "Background quality rules:",
-        *(f"- {item}" for item in policy.background_quality_rules),
     ]
-    if (
+
+
+def _render_reference_object_policy_section(policy: ReferenceUsagePolicy) -> list[str]:
+    lines = ["", "Object instance rules:"]
+    lines.extend(f"- {item}" for item in policy.object_instance_rules)
+    lines.extend(["", "Background quality rules:"])
+    lines.extend(f"- {item}" for item in policy.background_quality_rules)
+    return lines
+
+
+def _render_reference_failure_preset_section(policy: ReferenceUsagePolicy) -> list[str]:
+    if not _has_failure_preset_policy(policy):
+        return []
+    lines = [
+        "",
+        "## Failure Prevention Presets",
+        "Active preset ids:",
+        *(f"- {preset_id}" for preset_id in (policy.failure_preset_ids or ["none"])),
+    ]
+    if policy.positive_anchors:
+        lines.extend(["", "Positive anchors to preserve:"])
+        lines.extend(f"- {item}" for item in policy.positive_anchors)
+    if policy.negative_anchors:
+        lines.extend(["", "Negative anchors to suppress:"])
+        lines.extend(f"- {item}" for item in policy.negative_anchors)
+    if policy.render_priority:
+        lines.extend(["", "Render priority:"])
+        lines.append(" > ".join(policy.render_priority))
+    if policy.conflict_resolution:
+        lines.extend(["", "Conflict resolution rules:"])
+        lines.extend(f"- {item}" for item in policy.conflict_resolution)
+    return lines
+
+
+def _has_failure_preset_policy(policy: ReferenceUsagePolicy) -> bool:
+    return bool(
         policy.failure_preset_ids
         or policy.positive_anchors
         or policy.negative_anchors
         or policy.render_priority
         or policy.conflict_resolution
-    ):
-        lines.extend(
-            [
-                "",
-                "## Failure Prevention Presets",
-                "Active preset ids:",
-                *(f"- {preset_id}" for preset_id in (policy.failure_preset_ids or ["none"])),
-            ]
-        )
-        if policy.positive_anchors:
-            lines.extend(["", "Positive anchors to preserve:"])
-            lines.extend(f"- {item}" for item in policy.positive_anchors)
-        if policy.negative_anchors:
-            lines.extend(["", "Negative anchors to suppress:"])
-            lines.extend(f"- {item}" for item in policy.negative_anchors)
-        if policy.render_priority:
-            lines.extend(["", "Render priority:"])
-            lines.append(" > ".join(policy.render_priority))
-        if policy.conflict_resolution:
-            lines.extend(["", "Conflict resolution rules:"])
-            lines.extend(f"- {item}" for item in policy.conflict_resolution)
-    lines.append(
+    )
+
+
+def _render_single_image_guardrail() -> str:
+    return (
         "Generate a single final image, not a collage, contact sheet, "
         "split panel, or numbered panel layout."
     )
-    return "\n".join(lines).strip()
 
 
 def render_motion_prompt(svp: SVPVideo) -> str:
