@@ -133,9 +133,7 @@ def _collect_critical_pose_geometry(svp: SVPVideo) -> dict[str, list[str]]:
     expanded = _expand_pose_geometry(
         object_states=object_states,
         contact_graph=_dedupe_keep_order([*contact_graph, *contact_points]),
-        viewer_contact_graph=_dedupe_keep_order(
-            [*viewer_contact_graph, *viewer_contact_points]
-        ),
+        viewer_contact_graph=_dedupe_keep_order([*viewer_contact_graph, *viewer_contact_points]),
         anatomical_contact_graph=_dedupe_keep_order(
             [*anatomical_contact_graph, *anatomical_contact_points]
         ),
@@ -171,9 +169,7 @@ def _expand_pose_geometry(
         joined = "; ".join(pose_intents)
         required.append(f"Pose intent: {joined}. This pose intent overrides generic grip poses.")
         if _mentions_any(joined, ("unsheathing", "draw-pose", "draw pose")):
-            required.append(
-                "This is an unsheathing / draw-pose, not a two-handed guard stance."
-            )
+            required.append("This is an unsheathing / draw-pose, not a two-handed guard stance.")
             avoid.append("Do not convert the draw-pose into both hands gripping the same blade.")
 
     for item in object_states:
@@ -183,9 +179,7 @@ def _expand_pose_geometry(
                 "The scabbard/sheath must remain a separate dark object, not fused with the blade."
             )
         if _mentions_any(item, ("katana_blade", "blade")):
-            required.append(
-                "The katana blade must read as one single drawn glowing blade."
-            )
+            required.append("The katana blade must read as one single drawn glowing blade.")
 
     for item in contact_graph:
         required.append(f"Required contact relation: {item}.")
@@ -268,14 +262,21 @@ def render_image_prompt(svp: SVPVideo) -> str:
     The image renderer intentionally excludes ``motion_layer`` fields.
     """
 
-    por_core_text = ", ".join(svp.por_core)
-    grv_anchor_text = ", ".join(svp.grv_anchor)
-    required_items = _collect_required(svp)
-    critical_pose_geometry = _collect_critical_pose_geometry(svp)
-    avoid_items = _collect_forbidden(svp)
-    avoid_text = ", ".join(avoid_items) if avoid_items else "None"
+    lines: list[str] = []
+    lines.extend(_render_image_essence_section(svp))
+    lines.extend(_render_identity_lock_section(svp))
+    lines.extend(_render_image_visual_sections(svp))
+    lines.extend(_render_critical_pose_geometry_section(_collect_critical_pose_geometry(svp)))
+    lines.extend(_render_image_context_sections(svp))
+    lines.extend(_render_evaluation_hit_list_section(svp))
+    lines.extend(_render_required_constraints_section(_collect_required(svp)))
+    lines.extend(_render_avoid_section(_collect_forbidden(svp)))
+    return "\n".join(lines).strip()
 
-    lines: list[str] = [
+
+def _render_image_essence_section(svp: SVPVideo) -> list[str]:
+    por_core_text = ", ".join(svp.por_core)
+    return [
         "# Image Generation Brief",
         "",
         "## Essence (PoR)",
@@ -283,21 +284,24 @@ def render_image_prompt(svp: SVPVideo) -> str:
         "",
     ]
 
-    if svp.identity_locks:
-        lines.extend(
-            [
-                "## Identity Lock",
-                (
-                    "Preserve these subject-defining details exactly. Do not generalize, "
-                    "swap, or reinterpret them:"
-                ),
-                *(f"- {item}" for item in svp.identity_locks),
-                "",
-            ]
-        )
 
-    lines.extend(
-        [
+def _render_identity_lock_section(svp: SVPVideo) -> list[str]:
+    if not svp.identity_locks:
+        return []
+    return [
+        "## Identity Lock",
+        (
+            "Preserve these subject-defining details exactly. Do not generalize, "
+            "swap, or reinterpret them:"
+        ),
+        *(f"- {item}" for item in svp.identity_locks),
+        "",
+    ]
+
+
+def _render_image_visual_sections(svp: SVPVideo) -> list[str]:
+    grv_anchor_text = ", ".join(svp.grv_anchor)
+    return [
         "## Subject Identity",
         svp.por_identity,
         "",
@@ -326,32 +330,36 @@ def render_image_prompt(svp: SVPVideo) -> str:
         "## Pose",
         *_render_pose_block(svp),
         "",
-        ]
-    )
+    ]
 
-    if critical_pose_geometry:
+
+def _render_critical_pose_geometry_section(
+    critical_pose_geometry: dict[str, list[str]],
+) -> list[str]:
+    if not critical_pose_geometry:
+        return []
+    lines = [
+        "## Critical Pose Geometry",
+        (
+            "These RPE-derived object/contact constraints are high priority. "
+            "They override generic pose interpretation:"
+        ),
+    ]
+    lines.extend(f"- {item}" for item in critical_pose_geometry.get("required", []))
+    if critical_pose_geometry.get("avoid"):
         lines.extend(
             [
-                "## Critical Pose Geometry",
-                (
-                    "These RPE-derived object/contact constraints are high priority. "
-                    "They override generic pose interpretation:"
-                ),
+                "",
+                "Critical pose failures to avoid:",
+                *(f"- {item}" for item in critical_pose_geometry["avoid"]),
             ]
         )
-        lines.extend(f"- {item}" for item in critical_pose_geometry.get("required", []))
-        if critical_pose_geometry.get("avoid"):
-            lines.extend(
-                [
-                    "",
-                    "Critical pose failures to avoid:",
-                    *(f"- {item}" for item in critical_pose_geometry["avoid"]),
-                ]
-            )
-        lines.append("")
+    lines.append("")
+    return lines
 
-    lines.extend(
-        [
+
+def _render_image_context_sections(svp: SVPVideo) -> list[str]:
+    lines = [
         "## Color & Texture",
         f"- Colors: {', '.join(svp.color_axis)}",
         f"- Textures: {', '.join(svp.texture_axis)}",
@@ -360,44 +368,45 @@ def render_image_prompt(svp: SVPVideo) -> str:
         svp.c3.context,
         "",
         "## Consistency Rules",
-        ]
-    )
-
+    ]
     if svp.c3.consistency:
         lines.extend(f"- {item}" for item in svp.c3.consistency)
     else:
         lines.append("- None")
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Evaluation Hit List",
-        ]
-    )
+
+def _render_evaluation_hit_list_section(svp: SVPVideo) -> list[str]:
+    lines = [
+        "",
+        "## Evaluation Hit List",
+    ]
     if svp.c3.evaluation_criteria.hit_list:
         lines.extend(f"- {item}" for item in svp.c3.evaluation_criteria.hit_list)
     else:
         lines.append("- None")
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Required Constraints",
-        ]
-    )
+
+def _render_required_constraints_section(required_items: list[tuple[str, str]]) -> list[str]:
+    lines = [
+        "",
+        "## Required Constraints",
+    ]
     if required_items:
         lines.extend(f"- [{layer}] {item}" for layer, item in required_items)
     else:
         lines.append("- None")
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Avoid",
-            f"Avoid: {avoid_text}",
-        ]
-    )
-    return "\n".join(lines).strip()
+
+def _render_avoid_section(avoid_items: list[str]) -> list[str]:
+    avoid_text = ", ".join(avoid_items) if avoid_items else "None"
+    return [
+        "",
+        "## Avoid",
+        f"Avoid: {avoid_text}",
+    ]
 
 
 def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
@@ -407,10 +416,7 @@ def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
         prompt.strip(),
         "",
         "## Reference Image Usage Policy",
-        (
-            "If a reference image is provided, use it only for these character "
-            "identity details:"
-        ),
+        ("If a reference image is provided, use it only for these character identity details:"),
         *(f"- {item}" for item in policy.use_reference_for),
         "",
         "Do not copy these elements from the reference image:",
@@ -438,10 +444,7 @@ def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
                 "",
                 "## Failure Prevention Presets",
                 "Active preset ids:",
-                *(
-                    f"- {preset_id}"
-                    for preset_id in (policy.failure_preset_ids or ["none"])
-                ),
+                *(f"- {preset_id}" for preset_id in (policy.failure_preset_ids or ["none"])),
             ]
         )
         if policy.positive_anchors:
@@ -466,11 +469,20 @@ def append_reference_usage_policy(prompt: str, svp: SVPVideo) -> str:
 def render_motion_prompt(svp: SVPVideo) -> str:
     """Render motion-layer prompt text from SVPVideo for Seedance r2v."""
 
-    avoid_items = _collect_motion_forbidden(svp)
-    required_items = _collect_motion_required(svp)
-    avoid_text = ", ".join(avoid_items) if avoid_items else "None"
+    lines: list[str] = []
+    lines.extend(_render_motion_reference_and_essence_section(svp))
+    lines.extend(_render_motion_anchor_section(svp))
+    lines.extend(_render_motion_camera_section(svp))
+    lines.extend(_render_subject_motion_section(svp))
+    lines.extend(_render_motion_timeline_section(svp))
+    lines.extend(_render_motion_style_and_consistency_section(svp))
+    lines.extend(_render_required_constraints_section(_collect_motion_required(svp)))
+    lines.extend(_render_motion_guardrails_section(_collect_motion_forbidden(svp)))
+    return "\n".join(lines).strip()
 
-    lines: list[str] = [
+
+def _render_motion_reference_and_essence_section(svp: SVPVideo) -> list[str]:
+    lines = [
         "# Video Generation Brief",
         "",
         "## Reference",
@@ -483,32 +495,34 @@ def render_motion_prompt(svp: SVPVideo) -> str:
         "Throughout the video, keep these semantic core elements visible:",
     ]
     lines.extend(f"- {item}" for item in svp.por_core)
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Visual Anchors (grv)",
-            "The camera focus should stay on:",
-        ]
-    )
+
+def _render_motion_anchor_section(svp: SVPVideo) -> list[str]:
+    lines = [
+        "",
+        "## Visual Anchors (grv)",
+        "The camera focus should stay on:",
+    ]
     lines.extend(f"- {item}" for item in svp.grv_anchor)
+    return lines
 
+
+def _render_motion_camera_section(svp: SVPVideo) -> list[str]:
     camera = svp.motion_layer.camera_movement
-    lines.extend(
-        [
-            "",
-            "## Camera Movement",
-            f"- Type: {camera.type}",
-            f"- Speed: {camera.speed}",
-        ]
-    )
+    return [
+        "",
+        "## Camera Movement",
+        f"- Type: {camera.type}",
+        f"- Speed: {camera.speed}",
+    ]
 
-    lines.extend(
-        [
-            "",
-            "## Subject Motion",
-        ]
-    )
+
+def _render_subject_motion_section(svp: SVPVideo) -> list[str]:
+    lines = [
+        "",
+        "## Subject Motion",
+    ]
     if svp.motion_layer.subject_motion:
         for movement in svp.motion_layer.subject_motion:
             lines.extend(
@@ -520,13 +534,14 @@ def render_motion_prompt(svp: SVPVideo) -> str:
             )
     else:
         lines.append("- None")
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Timeline",
-        ]
-    )
+
+def _render_motion_timeline_section(svp: SVPVideo) -> list[str]:
+    lines = [
+        "",
+        "## Timeline",
+    ]
     if svp.motion_layer.temporal_anchors:
         lines.extend(
             f"- {anchor.time_range}: {anchor.description}"
@@ -534,45 +549,36 @@ def render_motion_prompt(svp: SVPVideo) -> str:
         )
     else:
         lines.append("- None")
+    return lines
 
+
+def _render_motion_style_and_consistency_section(svp: SVPVideo) -> list[str]:
     style_pack = svp.style_pack or "None"
-    lines.extend(
-        [
-            "",
-            "## Duration",
-            f"{svp.motion_layer.duration_seconds} seconds",
-            "",
-            "## Style Continuity",
-            f"Maintain the style defined by: {svp.style_family} / {style_pack}",
-            "",
-            "## Consistency Rules",
-        ]
-    )
+    lines = [
+        "",
+        "## Duration",
+        f"{svp.motion_layer.duration_seconds} seconds",
+        "",
+        "## Style Continuity",
+        f"Maintain the style defined by: {svp.style_family} / {style_pack}",
+        "",
+        "## Consistency Rules",
+    ]
     if svp.c3.consistency:
         lines.extend(f"- {item}" for item in svp.c3.consistency)
     else:
         lines.append("- None")
+    return lines
 
-    lines.extend(
-        [
-            "",
-            "## Required Constraints",
-        ]
-    )
-    if required_items:
-        lines.extend(f"- [{layer}] {item}" for layer, item in required_items)
-    else:
-        lines.append("- None")
 
-    lines.extend(
-        [
-            "",
-            "## Continuity Guardrails",
-            "- Keep PoR core elements visible throughout the timeline.",
-            "- Keep primary grv anchors inside the frame throughout the timeline.",
-            "",
-            "## Avoid",
-            f"Avoid: {avoid_text}",
-        ]
-    )
-    return "\n".join(lines).strip()
+def _render_motion_guardrails_section(avoid_items: list[str]) -> list[str]:
+    avoid_text = ", ".join(avoid_items) if avoid_items else "None"
+    return [
+        "",
+        "## Continuity Guardrails",
+        "- Keep PoR core elements visible throughout the timeline.",
+        "- Keep primary grv anchors inside the frame throughout the timeline.",
+        "",
+        "## Avoid",
+        f"Avoid: {avoid_text}",
+    ]
