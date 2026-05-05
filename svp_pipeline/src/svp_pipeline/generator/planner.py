@@ -1447,6 +1447,21 @@ def _extract_literal_identity_markers(prompt: str) -> list[str]:
 
 def _extract_derived_identity_locks(prompt: str, lower_prompt: str) -> list[str]:
     locks: list[str] = []
+    if _has_silver_ponytail(prompt, lower_prompt):
+        locks.append("silver-gray high ponytail")
+    if _has_red_eyes(prompt, lower_prompt):
+        locks.append("red eyes")
+    if _has_female_subject(prompt, lower_prompt):
+        locks.append("female character")
+    if _has_male_subject(prompt, lower_prompt):
+        locks.append("male character")
+    if _has_katana(prompt, lower_prompt):
+        locks.append("katana")
+
+    return locks
+
+
+def _has_silver_ponytail(prompt: str, lower_prompt: str) -> bool:
     has_silver = _contains_unnegated(r"\bsilver\b", lower_prompt) or _contains_unnegated_literal(
         prompt, "銀"
     )
@@ -1456,41 +1471,39 @@ def _extract_derived_identity_locks(prompt: str, lower_prompt: str) -> list[str]
         prompt,
         "ポニーテール",
     )
-    if has_silver and has_ponytail:
-        locks.append("silver-gray high ponytail")
+    return has_silver and has_ponytail
 
-    has_red_eyes = (
+
+def _has_red_eyes(prompt: str, lower_prompt: str) -> bool:
+    return (
         _contains_unnegated(r"\bred eyes?\b", lower_prompt)
         or _contains_unnegated_literal(prompt, "赤い瞳")
         or _contains_unnegated_literal(prompt, "赤目")
     )
-    if has_red_eyes:
-        locks.append("red eyes")
 
-    has_female_subject = (
+
+def _has_female_subject(prompt: str, lower_prompt: str) -> bool:
+    return (
         _contains_unnegated(r"\bwoman\b", lower_prompt)
         or _contains_unnegated(r"\bfemale\b", lower_prompt)
         or _contains_unnegated_literal(prompt, "女性")
         or _contains_unnegated_literal(prompt, "少女")
     )
-    if has_female_subject:
-        locks.append("female character")
 
-    has_male_subject = (
+
+def _has_male_subject(prompt: str, lower_prompt: str) -> bool:
+    return (
         _contains_unnegated(r"\bman\b", lower_prompt)
         or _contains_unnegated(r"\bmale\b", lower_prompt)
         or _contains_unnegated(r"\bboy\b", lower_prompt)
         or _contains_unnegated_literal(prompt, "男性")
         or _contains_unnegated_literal(prompt, "少年")
     )
-    if has_male_subject:
-        locks.append("male character")
 
-    if (
+
+def _has_katana(prompt: str, lower_prompt: str) -> bool:
+    return (
         _contains_unnegated(r"\bkatana\b", lower_prompt)
         or _contains_unnegated_literal(prompt, "刀")
         or _contains_unnegated_literal(prompt, "日本刀")
-    ):
-        locks.append("katana")
-
-    return locks
+    )
