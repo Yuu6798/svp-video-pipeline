@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,53 @@ REUSABLE_IMAGE_ARTIFACTS: dict[str, str] = {
     "character_green": "character_green.png",
     "background_clean": "background_clean.png",
 }
+
+
+@dataclass
+class AuditWorkflowConfig:
+    prompt_text: str
+    duration: int
+    output_dir: Path
+    planner_model: str
+    image_backend: str
+    audit_image: Path
+    compare_image: Path | None
+    audit_backend: str
+    audit_observed: list[str]
+    audit_missing: list[str]
+    audit_violation: list[str]
+    audit_object_state: list[str]
+    audit_contact_graph: list[str]
+    audit_viewer_contact_graph: list[str]
+    audit_anatomical_contact_graph: list[str]
+    audit_pose_intent: str | None
+    audit_failure_mode: list[str]
+    audit_note: list[str]
+    audit_repair: bool
+    extract_failure_preset: bool
+    audit_regenerate: bool
+    from_svp: Path | None
+    reuse_run: Path | None
+    repair_from_rpe: Path | None
+    reference_image: Path | None
+    reference_crop: int | None
+    separate_character_bg: bool
+    failure_preset: list[str]
+    cheap: bool
+    dry_run: bool
+    no_video: bool
+    character_lock: bool
+    verbose: bool
+
+
+@dataclass
+class AuditWorkflowResults:
+    audit_result: ImageAuditResult
+    repair_result: RepairResult | None = None
+    failure_preset_candidate_path: Path | None = None
+    comparison_result: VisualComparisonResult | None = None
+    regeneration_result: PipelineResult | None = None
+    regeneration_comparison_result: VisualComparisonResult | None = None
 
 
 def _version_callback(value: bool) -> None:
@@ -387,114 +435,240 @@ def _run_audit_workflow(
     character_lock: bool,
     verbose: bool,
 ) -> None:
-    if audit_regenerate and not audit_repair:
-        console.print("[red]--audit-regenerate requires --audit-repair[/red]")
-        raise typer.Exit(1)
-    if extract_failure_preset and not audit_repair:
-        console.print("[red]--extract-failure-preset requires --audit-repair[/red]")
-        raise typer.Exit(1)
-    _check_audit_options(
-        image_path=audit_image,
+    config = AuditWorkflowConfig(
+        prompt_text=prompt_text,
+        duration=duration,
+        output_dir=output_dir,
+        planner_model=planner_model,
+        image_backend=image_backend,
+        audit_image=audit_image,
         compare_image=compare_image,
-        backend=audit_backend,
+        audit_backend=audit_backend,
+        audit_observed=audit_observed,
+        audit_missing=audit_missing,
+        audit_violation=audit_violation,
+        audit_object_state=audit_object_state,
+        audit_contact_graph=audit_contact_graph,
+        audit_viewer_contact_graph=audit_viewer_contact_graph,
+        audit_anatomical_contact_graph=audit_anatomical_contact_graph,
+        audit_pose_intent=audit_pose_intent,
+        audit_failure_mode=audit_failure_mode,
+        audit_note=audit_note,
+        audit_repair=audit_repair,
+        extract_failure_preset=extract_failure_preset,
+        audit_regenerate=audit_regenerate,
         from_svp=from_svp,
         reuse_run=reuse_run,
         repair_from_rpe=repair_from_rpe,
+        reference_image=reference_image,
+        reference_crop=reference_crop,
+        separate_character_bg=separate_character_bg,
+        failure_preset=failure_preset,
+        cheap=cheap,
+        dry_run=dry_run,
+        no_video=no_video,
+        character_lock=character_lock,
+        verbose=verbose,
     )
-    if audit_regenerate:
-        _validate_regeneration_options(
-            planner_model=planner_model,
-            image_backend=image_backend,
-            reference_image=reference_image,
-            reference_crop=reference_crop,
-            separate_character_bg=separate_character_bg,
-            dry_run=dry_run,
-            no_video=no_video,
-        )
-    _check_output_dir(output_dir)
+    _validate_audit_workflow_options(config)
+    _check_output_dir(config.output_dir)
     try:
-        audit_result = _run_image_audit(
-            image_path=audit_image,
-            backend=audit_backend,
-            from_svp=from_svp,
-            reuse_run=reuse_run,
-            output_dir=output_dir,
-            observed=audit_observed,
-            missing=audit_missing,
-            violations=audit_violation,
-            object_states=audit_object_state,
-            contact_graph=audit_contact_graph,
-            viewer_contact_graph=audit_viewer_contact_graph,
-            anatomical_contact_graph=audit_anatomical_contact_graph,
-            pose_intent=audit_pose_intent,
-            failure_modes=audit_failure_mode,
-            notes=audit_note,
-        )
-        repair_result = None
-        failure_preset_candidate_path = None
-        comparison_result = _maybe_run_audit_visual_comparison(
-            audit_result=audit_result,
-            compare_image=compare_image,
-            notes=audit_note,
-        )
-        regeneration_result = None
-        regeneration_comparison_result = None
-        if audit_repair:
-            repair_result = _run_repair_from_rpe(
-                observed_rpe=audit_result.observed_rpe_path,
-                from_svp=from_svp,
-                reuse_run=reuse_run,
-                output_dir=audit_result.output_dir,
-            )
-            if extract_failure_preset:
-                failure_preset_candidate_path = _write_failure_preset_candidate(
-                    audit_result=audit_result,
-                    repair_result=repair_result,
-                )
-        if audit_regenerate:
-            assert repair_result is not None
-            regeneration_result = _run_regeneration_from_repair(
-                repair_result=repair_result,
-                prompt=prompt_text,
-                duration=duration,
-                no_video=no_video,
-                output_dir=audit_result.output_dir / "regenerated",
-                planner_model=planner_model,
-                image_backend=image_backend,
-                cheap=cheap,
-                dry_run=dry_run,
-                character_lock=character_lock,
-                reference_image=reference_image,
-                reference_crop=reference_crop,
-                separate_character_bg=separate_character_bg,
-                failure_presets=failure_preset,
-                verbose=verbose,
-            )
-            if compare_image is not None and regeneration_result.image_path is not None:
-                regeneration_comparison_result = _run_visual_comparison(
-                    source_image=compare_image,
-                    candidate_image=regeneration_result.image_path,
-                    output_dir=audit_result.output_dir / "regenerated_comparison",
-                    notes=[
-                        *(
-                            audit_note
-                            or [
-                                "regenerated image compared against improvement target",
-                            ]
-                        ),
-                    ],
-                )
+        results = _execute_audit_workflow(config)
     except (SVPPipelineError, ValueError, RuntimeError, OSError) as exc:
-        _handle_error(exc, verbose=verbose)
+        _handle_error(exc, verbose=config.verbose)
         raise typer.Exit(1) from exc
     _print_audit_summary(
-        audit_result,
+        results.audit_result,
+        repair_result=results.repair_result,
+        failure_preset_candidate_path=results.failure_preset_candidate_path,
+        comparison_result=results.comparison_result,
+        regeneration_result=results.regeneration_result,
+        regeneration_comparison_result=results.regeneration_comparison_result,
+    )
+
+
+def _execute_audit_workflow(config: AuditWorkflowConfig) -> AuditWorkflowResults:
+    audit_result = _run_image_audit(
+        image_path=config.audit_image,
+        backend=config.audit_backend,
+        from_svp=config.from_svp,
+        reuse_run=config.reuse_run,
+        output_dir=config.output_dir,
+        observed=config.audit_observed,
+        missing=config.audit_missing,
+        violations=config.audit_violation,
+        object_states=config.audit_object_state,
+        contact_graph=config.audit_contact_graph,
+        viewer_contact_graph=config.audit_viewer_contact_graph,
+        anatomical_contact_graph=config.audit_anatomical_contact_graph,
+        pose_intent=config.audit_pose_intent,
+        failure_modes=config.audit_failure_mode,
+        notes=config.audit_note,
+    )
+    comparison_result = _maybe_run_audit_visual_comparison(
+        audit_result=audit_result,
+        compare_image=config.compare_image,
+        notes=config.audit_note,
+    )
+    repair_result, failure_preset_candidate_path = _maybe_run_audit_repair(
+        audit_result=audit_result,
+        audit_repair=config.audit_repair,
+        extract_failure_preset=config.extract_failure_preset,
+        from_svp=config.from_svp,
+        reuse_run=config.reuse_run,
+    )
+    regeneration_result = _maybe_run_repair_regeneration(
+        audit_regenerate=config.audit_regenerate,
+        repair_result=repair_result,
+        prompt_text=config.prompt_text,
+        duration=config.duration,
+        no_video=config.no_video,
+        output_dir=audit_result.output_dir / "regenerated",
+        planner_model=config.planner_model,
+        image_backend=config.image_backend,
+        cheap=config.cheap,
+        dry_run=config.dry_run,
+        character_lock=config.character_lock,
+        reference_image=config.reference_image,
+        reference_crop=config.reference_crop,
+        separate_character_bg=config.separate_character_bg,
+        failure_preset=config.failure_preset,
+        verbose=config.verbose,
+    )
+    regeneration_comparison_result = _maybe_run_regeneration_comparison(
+        audit_result=audit_result,
+        compare_image=config.compare_image,
+        regeneration_result=regeneration_result,
+        notes=config.audit_note,
+    )
+    return AuditWorkflowResults(
+        audit_result=audit_result,
         repair_result=repair_result,
         failure_preset_candidate_path=failure_preset_candidate_path,
         comparison_result=comparison_result,
         regeneration_result=regeneration_result,
         regeneration_comparison_result=regeneration_comparison_result,
     )
+
+
+def _maybe_run_audit_repair(
+    *,
+    audit_result: ImageAuditResult,
+    audit_repair: bool,
+    extract_failure_preset: bool,
+    from_svp: Path | None,
+    reuse_run: Path | None,
+) -> tuple[RepairResult | None, Path | None]:
+    if not audit_repair:
+        return None, None
+    repair_result = _run_repair_from_rpe(
+        observed_rpe=audit_result.observed_rpe_path,
+        from_svp=from_svp,
+        reuse_run=reuse_run,
+        output_dir=audit_result.output_dir,
+    )
+    if not extract_failure_preset:
+        return repair_result, None
+    return repair_result, _write_failure_preset_candidate(
+        audit_result=audit_result,
+        repair_result=repair_result,
+    )
+
+
+def _maybe_run_repair_regeneration(
+    *,
+    audit_regenerate: bool,
+    repair_result: RepairResult | None,
+    prompt_text: str,
+    duration: int,
+    no_video: bool,
+    output_dir: Path,
+    planner_model: str,
+    image_backend: str,
+    cheap: bool,
+    dry_run: bool,
+    character_lock: bool,
+    reference_image: Path | None,
+    reference_crop: int | None,
+    separate_character_bg: bool,
+    failure_preset: list[str],
+    verbose: bool,
+) -> PipelineResult | None:
+    if not audit_regenerate:
+        return None
+    assert repair_result is not None
+    return _run_regeneration_from_repair(
+        repair_result=repair_result,
+        prompt=prompt_text,
+        duration=duration,
+        no_video=no_video,
+        output_dir=output_dir,
+        planner_model=planner_model,
+        image_backend=image_backend,
+        cheap=cheap,
+        dry_run=dry_run,
+        character_lock=character_lock,
+        reference_image=reference_image,
+        reference_crop=reference_crop,
+        separate_character_bg=separate_character_bg,
+        failure_presets=failure_preset,
+        verbose=verbose,
+    )
+
+
+def _maybe_run_regeneration_comparison(
+    *,
+    audit_result: ImageAuditResult,
+    compare_image: Path | None,
+    regeneration_result: PipelineResult | None,
+    notes: list[str],
+) -> VisualComparisonResult | None:
+    if (
+        compare_image is None
+        or regeneration_result is None
+        or regeneration_result.image_path is None
+    ):
+        return None
+    return _run_visual_comparison(
+        source_image=compare_image,
+        candidate_image=regeneration_result.image_path,
+        output_dir=audit_result.output_dir / "regenerated_comparison",
+        notes=[
+            *(
+                notes
+                or [
+                    "regenerated image compared against improvement target",
+                ]
+            ),
+        ],
+    )
+
+
+def _validate_audit_workflow_options(config: AuditWorkflowConfig) -> None:
+    if config.audit_regenerate and not config.audit_repair:
+        console.print("[red]--audit-regenerate requires --audit-repair[/red]")
+        raise typer.Exit(1)
+    if config.extract_failure_preset and not config.audit_repair:
+        console.print("[red]--extract-failure-preset requires --audit-repair[/red]")
+        raise typer.Exit(1)
+    _check_audit_options(
+        image_path=config.audit_image,
+        compare_image=config.compare_image,
+        backend=config.audit_backend,
+        from_svp=config.from_svp,
+        reuse_run=config.reuse_run,
+        repair_from_rpe=config.repair_from_rpe,
+    )
+    if config.audit_regenerate:
+        _validate_regeneration_options(
+            planner_model=config.planner_model,
+            image_backend=config.image_backend,
+            reference_image=config.reference_image,
+            reference_crop=config.reference_crop,
+            separate_character_bg=config.separate_character_bg,
+            dry_run=config.dry_run,
+            no_video=config.no_video,
+        )
 
 
 def _validate_regeneration_options(
