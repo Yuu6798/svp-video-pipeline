@@ -868,19 +868,50 @@ class Pipeline:
         reference_crop: int | None,
         separate_character_bg: bool,
     ) -> None:
-        if from_svp_path is not None and not Path(from_svp_path).is_file():
-            raise ValueError(f"SVP file not found: {from_svp_path}")
-        if reuse_image is not None and reuse_image not in self.REUSABLE_IMAGE_ARTIFACTS:
-            allowed = ", ".join(sorted(self.REUSABLE_IMAGE_ARTIFACTS))
-            raise ValueError(f"unsupported reuse image artifact: {reuse_image!r}; choose {allowed}")
+        self._validate_from_svp_path(from_svp_path)
+        self._validate_reuse_image_key(reuse_image)
         if reuse_run_dir is None:
-            if reuse_image is not None:
-                raise ValueError("reuse_image requires reuse_run_dir")
+            self._validate_no_reuse_image_without_run_dir(reuse_image)
             return
 
         reuse_dir = Path(reuse_run_dir)
+        self._validate_reuse_run_dir(reuse_dir, reuse_run_dir)
+        self._validate_reusable_svp(
+            from_svp_path=from_svp_path,
+            reuse_run_dir=reuse_run_dir,
+        )
+        self._validate_reusable_image(
+            reuse_run_dir=reuse_run_dir,
+            reuse_image=reuse_image,
+        )
+        self._validate_reuse_exclusive_options(
+            reference_image_path=reference_image_path,
+            reference_crop=reference_crop,
+            separate_character_bg=separate_character_bg,
+        )
+
+    def _validate_from_svp_path(self, from_svp_path: Path | None) -> None:
+        if from_svp_path is not None and not Path(from_svp_path).is_file():
+            raise ValueError(f"SVP file not found: {from_svp_path}")
+
+    def _validate_reuse_image_key(self, reuse_image: str | None) -> None:
+        if reuse_image is not None and reuse_image not in self.REUSABLE_IMAGE_ARTIFACTS:
+            allowed = ", ".join(sorted(self.REUSABLE_IMAGE_ARTIFACTS))
+            raise ValueError(f"unsupported reuse image artifact: {reuse_image!r}; choose {allowed}")
+
+    def _validate_no_reuse_image_without_run_dir(self, reuse_image: str | None) -> None:
+        if reuse_image is not None:
+            raise ValueError("reuse_image requires reuse_run_dir")
+
+    def _validate_reuse_run_dir(self, reuse_dir: Path, reuse_run_dir: Path | None) -> None:
         if not reuse_dir.is_dir():
             raise ValueError(f"reuse run directory not found: {reuse_run_dir}")
+
+    def _validate_reusable_svp(
+        self,
+        from_svp_path: Path | None,
+        reuse_run_dir: Path | None,
+    ) -> None:
         svp_source = self._resolve_svp_source(
             from_svp_path=from_svp_path,
             reuse_run_dir=reuse_run_dir,
@@ -888,6 +919,11 @@ class Pipeline:
         if svp_source is None or not svp_source.is_file():
             raise ValueError(f"reusable SVP not found: {svp_source}")
 
+    def _validate_reusable_image(
+        self,
+        reuse_run_dir: Path | None,
+        reuse_image: str | None,
+    ) -> None:
         image_source = self._resolve_reusable_image_path(
             reuse_run_dir=reuse_run_dir,
             reuse_image=reuse_image,
@@ -895,6 +931,13 @@ class Pipeline:
         if image_source is None or not image_source.is_file():
             artifact_key = reuse_image or "image"
             raise ValueError(f"reusable image artifact {artifact_key!r} not found: {image_source}")
+
+    def _validate_reuse_exclusive_options(
+        self,
+        reference_image_path: Path | None,
+        reference_crop: int | None,
+        separate_character_bg: bool,
+    ) -> None:
         if reference_image_path is not None or reference_crop is not None or separate_character_bg:
             raise ValueError(
                 "reuse_run_dir reuses an existing image artifact; do not combine it with "
