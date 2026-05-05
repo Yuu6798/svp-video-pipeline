@@ -23,6 +23,16 @@ class RepairResult:
     diff: SemanticDiffReport
 
 
+@dataclass
+class _RepairAdditions:
+    """Derived repair strings applied across SVP layers."""
+
+    required: list[str]
+    forbidden: list[str]
+    critical: list[str]
+    contact_points: list[str]
+
+
 def repair_svp_from_observed_rpe(
     *,
     base_svp_path: Path,
@@ -79,94 +89,11 @@ def apply_repair(
     diff: SemanticDiffReport,
 ) -> SVPVideo:
     """Apply conservative repairs to a copied SVP."""
-    state_required = _state_required_repairs(observed.state)
-    state_contact_points = _state_contact_point_repairs(observed.state)
-    state_forbidden = _state_forbidden_repairs(observed.state)
-    required_additions = _dedupe([*observed.missing, *state_required])
-    forbidden_additions = _dedupe([*observed.violations, *state_forbidden])
-    critical_additions = _dedupe(
-        [f"Observed failure: {issue.observed}" for issue in diff.issues]
-    )
-
-    c3_constraints = svp.c3.constraints.model_copy(
-        update={
-            "required": _append_unique(list(svp.c3.constraints.required), required_additions),
-            "forbidden": _append_unique(list(svp.c3.constraints.forbidden), forbidden_additions),
-        }
-    )
-    evaluation = svp.c3.evaluation_criteria.model_copy(
-        update={
-            "hit_list": _append_unique(
-                list(svp.c3.evaluation_criteria.hit_list),
-                required_additions,
-            ),
-            "critical_fail_conditions": _append_unique(
-                list(svp.c3.evaluation_criteria.critical_fail_conditions),
-                critical_additions + forbidden_additions,
-            ),
-        }
-    )
-    c3 = svp.c3.model_copy(
-        update={
-            "constraints": c3_constraints,
-            "evaluation_criteria": evaluation,
-        }
-    )
-
-    composition_constraints = svp.composition_layer.constraints.model_copy(
-        update={
-            "required": _append_unique(
-                list(svp.composition_layer.constraints.required),
-                _composition_required_repairs(required_additions),
-            ),
-            "forbidden": _append_unique(
-                list(svp.composition_layer.constraints.forbidden),
-                _composition_forbidden_repairs(forbidden_additions),
-            ),
-        }
-    )
-    composition_layer = svp.composition_layer.model_copy(
-        update={"constraints": composition_constraints}
-    )
-
-    pose_constraints = svp.pose_layer.constraints.model_copy(
-        update={
-            "required": _append_unique(
-                list(svp.pose_layer.constraints.required),
-                _pose_required_repairs(required_additions),
-            ),
-            "forbidden": _append_unique(
-                list(svp.pose_layer.constraints.forbidden),
-                _pose_forbidden_repairs(forbidden_additions),
-            ),
-        }
-    )
-    pose_layer = svp.pose_layer.model_copy(update={"constraints": pose_constraints})
-    pose_layer = pose_layer.model_copy(
-        update={
-            "contact_points": _merge_contact_points(
-                list(pose_layer.contact_points),
-                state_contact_points,
-            )
-        }
-    )
-
-    reference_policy = svp.reference_usage_policy.model_copy(
-        update={
-            "do_not_copy_from_reference": _append_unique(
-                list(svp.reference_usage_policy.do_not_copy_from_reference),
-                _reference_forbidden_repairs(forbidden_additions),
-            ),
-            "object_instance_rules": _append_unique(
-                list(svp.reference_usage_policy.object_instance_rules),
-                _object_rule_repairs(forbidden_additions),
-            ),
-            "background_quality_rules": _append_unique(
-                list(svp.reference_usage_policy.background_quality_rules),
-                _background_rule_repairs(forbidden_additions),
-            ),
-        }
-    )
+    additions = _collect_repair_additions(observed=observed, diff=diff)
+    c3 = _repair_c3(svp, additions)
+    composition_layer = _repair_composition_layer(svp, additions)
+    pose_layer = _repair_pose_layer(svp, additions)
+    reference_policy = _repair_reference_policy(svp, additions)
 
     return svp.model_copy(
         update={
@@ -176,6 +103,112 @@ def apply_repair(
             "reference_usage_policy": reference_policy,
         }
     )
+
+
+def _collect_repair_additions(
+    *,
+    observed: ObservedRPE,
+    diff: SemanticDiffReport,
+) -> _RepairAdditions:
+    state_required = _state_required_repairs(observed.state)
+    state_contact_points = _state_contact_point_repairs(observed.state)
+    state_forbidden = _state_forbidden_repairs(observed.state)
+    required_additions = _dedupe([*observed.missing, *state_required])
+    forbidden_additions = _dedupe([*observed.violations, *state_forbidden])
+    critical_additions = _dedupe([f"Observed failure: {issue.observed}" for issue in diff.issues])
+    return _RepairAdditions(
+        required=required_additions,
+        forbidden=forbidden_additions,
+        critical=critical_additions,
+        contact_points=state_contact_points,
+    )
+
+
+def _repair_c3(svp: SVPVideo, additions: _RepairAdditions):
+    c3_constraints = svp.c3.constraints.model_copy(
+        update={
+            "required": _append_unique(list(svp.c3.constraints.required), additions.required),
+            "forbidden": _append_unique(list(svp.c3.constraints.forbidden), additions.forbidden),
+        }
+    )
+    evaluation = svp.c3.evaluation_criteria.model_copy(
+        update={
+            "hit_list": _append_unique(
+                list(svp.c3.evaluation_criteria.hit_list),
+                additions.required,
+            ),
+            "critical_fail_conditions": _append_unique(
+                list(svp.c3.evaluation_criteria.critical_fail_conditions),
+                additions.critical + additions.forbidden,
+            ),
+        }
+    )
+    return svp.c3.model_copy(
+        update={
+            "constraints": c3_constraints,
+            "evaluation_criteria": evaluation,
+        }
+    )
+
+
+def _repair_composition_layer(svp: SVPVideo, additions: _RepairAdditions):
+    composition_constraints = svp.composition_layer.constraints.model_copy(
+        update={
+            "required": _append_unique(
+                list(svp.composition_layer.constraints.required),
+                _composition_required_repairs(additions.required),
+            ),
+            "forbidden": _append_unique(
+                list(svp.composition_layer.constraints.forbidden),
+                _composition_forbidden_repairs(additions.forbidden),
+            ),
+        }
+    )
+    return svp.composition_layer.model_copy(update={"constraints": composition_constraints})
+
+
+def _repair_pose_layer(svp: SVPVideo, additions: _RepairAdditions):
+    pose_constraints = svp.pose_layer.constraints.model_copy(
+        update={
+            "required": _append_unique(
+                list(svp.pose_layer.constraints.required),
+                _pose_required_repairs(additions.required),
+            ),
+            "forbidden": _append_unique(
+                list(svp.pose_layer.constraints.forbidden),
+                _pose_forbidden_repairs(additions.forbidden),
+            ),
+        }
+    )
+    pose_layer = svp.pose_layer.model_copy(update={"constraints": pose_constraints})
+    return pose_layer.model_copy(
+        update={
+            "contact_points": _merge_contact_points(
+                list(pose_layer.contact_points),
+                additions.contact_points,
+            )
+        }
+    )
+
+
+def _repair_reference_policy(svp: SVPVideo, additions: _RepairAdditions):
+    reference_policy = svp.reference_usage_policy.model_copy(
+        update={
+            "do_not_copy_from_reference": _append_unique(
+                list(svp.reference_usage_policy.do_not_copy_from_reference),
+                _reference_forbidden_repairs(additions.forbidden),
+            ),
+            "object_instance_rules": _append_unique(
+                list(svp.reference_usage_policy.object_instance_rules),
+                _object_rule_repairs(additions.forbidden),
+            ),
+            "background_quality_rules": _append_unique(
+                list(svp.reference_usage_policy.background_quality_rules),
+                _background_rule_repairs(additions.forbidden),
+            ),
+        }
+    )
+    return reference_policy
 
 
 def _make_repair_dir(output_root: Path) -> Path:
@@ -216,9 +249,7 @@ def _reference_forbidden_repairs(items: list[str]) -> list[str]:
 
 def _object_rule_repairs(items: list[str]) -> list[str]:
     return [
-        f"Object failure must not recur: {item}"
-        for item in items
-        if _mentions_object_contact(item)
+        f"Object failure must not recur: {item}" for item in items if _mentions_object_contact(item)
     ]
 
 
