@@ -39,6 +39,17 @@ class ImageAuditResult:
     expected_rpe: ExpectedRPE
 
 
+@dataclass
+class _ImageAuditContext:
+    """Prepared inputs shared across image audit backends."""
+
+    output_dir: Path
+    source_image_path: Path
+    svp_path: Path
+    svp: SVPVideo
+    expected_rpe: ExpectedRPE
+
+
 def audit_image_to_observed_rpe(
     *,
     svp_path: Path,
@@ -64,53 +75,116 @@ def audit_image_to_observed_rpe(
     into the same schema used by the repair step. ``openai`` mode asks a vision
     model to produce the same JSON shape.
     """
+    context = _prepare_image_audit_context(
+        svp_path=svp_path,
+        image_path=image_path,
+        output_root=output_root,
+    )
+    observed_rpe = _observed_rpe_from_backend(
+        context=context,
+        backend=backend,
+        observed=observed or [],
+        missing=missing or [],
+        violations=violations or [],
+        notes=notes or [],
+        object_states=object_states or [],
+        contact_graph=contact_graph or [],
+        viewer_contact_graph=viewer_contact_graph or [],
+        anatomical_contact_graph=anatomical_contact_graph or [],
+        pose_intent=pose_intent,
+        failure_modes=failure_modes or [],
+        model=model,
+        client=client,
+    )
+    return _write_image_audit_result(
+        context=context,
+        observed_rpe=observed_rpe,
+    )
+
+
+def _prepare_image_audit_context(
+    *,
+    svp_path: Path,
+    image_path: Path,
+    output_root: Path,
+) -> _ImageAuditContext:
     svp_path = Path(svp_path)
     image_path = Path(image_path)
     validate_image_file(image_path)
     output_dir = _make_audit_dir(Path(output_root))
     packet_image_path = copy_source_image_to_packet(image_path, output_dir)
-
     svp = SVPVideo.model_validate_json(svp_path.read_text(encoding="utf-8"))
     expected = extract_expected_rpe(svp)
+    return _ImageAuditContext(
+        output_dir=output_dir,
+        source_image_path=packet_image_path,
+        svp_path=svp_path,
+        svp=svp,
+        expected_rpe=expected,
+    )
+
+
+def _observed_rpe_from_backend(
+    *,
+    context: _ImageAuditContext,
+    backend: ImageAuditBackend | str,
+    observed: list[str],
+    missing: list[str],
+    violations: list[str],
+    notes: list[str],
+    object_states: list[str],
+    contact_graph: list[str],
+    viewer_contact_graph: list[str],
+    anatomical_contact_graph: list[str],
+    pose_intent: str | None,
+    failure_modes: list[str],
+    model: str,
+    client: OpenAI | None,
+) -> ObservedRPE:
     if backend == "manual":
-        observed_rpe = _manual_observed_rpe(
-            svp=svp,
-            svp_path=svp_path,
-            image_path=packet_image_path,
-            observed=observed or [],
-            missing=missing or [],
-            violations=violations or [],
-            notes=notes or [],
-            object_states=object_states or [],
-            contact_graph=contact_graph or [],
-            viewer_contact_graph=viewer_contact_graph or [],
-            anatomical_contact_graph=anatomical_contact_graph or [],
+        return _manual_observed_rpe(
+            svp=context.svp,
+            svp_path=context.svp_path,
+            image_path=context.source_image_path,
+            observed=observed,
+            missing=missing,
+            violations=violations,
+            notes=notes,
+            object_states=object_states,
+            contact_graph=contact_graph,
+            viewer_contact_graph=viewer_contact_graph,
+            anatomical_contact_graph=anatomical_contact_graph,
             pose_intent=pose_intent,
-            failure_modes=failure_modes or [],
+            failure_modes=failure_modes,
         )
-    elif backend == "openai":
-        observed_rpe = _openai_observed_rpe(
-            svp=svp,
-            svp_path=svp_path,
-            expected=expected,
-            image_path=packet_image_path,
+    if backend == "openai":
+        return _openai_observed_rpe(
+            svp=context.svp,
+            svp_path=context.svp_path,
+            expected=context.expected_rpe,
+            image_path=context.source_image_path,
             model=model,
             client=client,
         )
-    else:
-        raise ValueError(f"Unknown image audit backend: {backend!r}")
+    raise ValueError(f"Unknown image audit backend: {backend!r}")
 
-    expected_rpe_path = output_dir / "expected_rpe.json"
-    observed_rpe_path = output_dir / "observed_rpe.json"
-    write_json(expected_rpe_path, expected)
+
+def _write_image_audit_result(
+    *,
+    context: _ImageAuditContext,
+    observed_rpe: ObservedRPE,
+) -> ImageAuditResult:
+    expected_rpe_path = context.output_dir / "expected_rpe.json"
+    observed_rpe_path = context.output_dir / "observed_rpe.json"
+    write_json(expected_rpe_path, context.expected_rpe)
     write_json(observed_rpe_path, observed_rpe)
     return ImageAuditResult(
-        output_dir=output_dir,
-        source_image_path=packet_image_path,
+        output_dir=context.output_dir,
+        source_image_path=context.source_image_path,
         expected_rpe_path=expected_rpe_path,
         observed_rpe_path=observed_rpe_path,
         observed_rpe=observed_rpe,
-        expected_rpe=expected,
+        expected_rpe=context.expected_rpe,
     )
 
 
