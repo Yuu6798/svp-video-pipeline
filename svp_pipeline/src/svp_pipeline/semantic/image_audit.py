@@ -50,6 +50,22 @@ class _ImageAuditContext:
     expected_rpe: ExpectedRPE
 
 
+@dataclass
+class _ManualAuditFindings:
+    """Caller-supplied findings used by manual/Codex-assisted audit mode."""
+
+    observed: list[str]
+    missing: list[str]
+    violations: list[str]
+    notes: list[str]
+    object_states: list[str]
+    contact_graph: list[str]
+    viewer_contact_graph: list[str]
+    anatomical_contact_graph: list[str]
+    pose_intent: str | None
+    failure_modes: list[str]
+
+
 def audit_image_to_observed_rpe(
     *,
     svp_path: Path,
@@ -80,9 +96,45 @@ def audit_image_to_observed_rpe(
         image_path=image_path,
         output_root=output_root,
     )
+    findings = _build_manual_audit_findings(
+        observed=observed,
+        missing=missing,
+        violations=violations,
+        notes=notes,
+        object_states=object_states,
+        contact_graph=contact_graph,
+        viewer_contact_graph=viewer_contact_graph,
+        anatomical_contact_graph=anatomical_contact_graph,
+        pose_intent=pose_intent,
+        failure_modes=failure_modes,
+    )
     observed_rpe = _observed_rpe_from_backend(
         context=context,
         backend=backend,
+        findings=findings,
+        model=model,
+        client=client,
+    )
+    return _write_image_audit_result(
+        context=context,
+        observed_rpe=observed_rpe,
+    )
+
+
+def _build_manual_audit_findings(
+    *,
+    observed: list[str] | None,
+    missing: list[str] | None,
+    violations: list[str] | None,
+    notes: list[str] | None,
+    object_states: list[str] | None,
+    contact_graph: list[str] | None,
+    viewer_contact_graph: list[str] | None,
+    anatomical_contact_graph: list[str] | None,
+    pose_intent: str | None,
+    failure_modes: list[str] | None,
+) -> _ManualAuditFindings:
+    return _ManualAuditFindings(
         observed=observed or [],
         missing=missing or [],
         violations=violations or [],
@@ -93,12 +145,6 @@ def audit_image_to_observed_rpe(
         anatomical_contact_graph=anatomical_contact_graph or [],
         pose_intent=pose_intent,
         failure_modes=failure_modes or [],
-        model=model,
-        client=client,
-    )
-    return _write_image_audit_result(
-        context=context,
-        observed_rpe=observed_rpe,
     )
 
 
@@ -128,16 +174,7 @@ def _observed_rpe_from_backend(
     *,
     context: _ImageAuditContext,
     backend: ImageAuditBackend | str,
-    observed: list[str],
-    missing: list[str],
-    violations: list[str],
-    notes: list[str],
-    object_states: list[str],
-    contact_graph: list[str],
-    viewer_contact_graph: list[str],
-    anatomical_contact_graph: list[str],
-    pose_intent: str | None,
-    failure_modes: list[str],
+    findings: _ManualAuditFindings,
     model: str,
     client: OpenAI | None,
 ) -> ObservedRPE:
@@ -146,16 +183,7 @@ def _observed_rpe_from_backend(
             svp=context.svp,
             svp_path=context.svp_path,
             image_path=context.source_image_path,
-            observed=observed,
-            missing=missing,
-            violations=violations,
-            notes=notes,
-            object_states=object_states,
-            contact_graph=contact_graph,
-            viewer_contact_graph=viewer_contact_graph,
-            anatomical_contact_graph=anatomical_contact_graph,
-            pose_intent=pose_intent,
-            failure_modes=failure_modes,
+            findings=findings,
         )
     if backend == "openai":
         return _openai_observed_rpe(
@@ -193,44 +221,49 @@ def _manual_observed_rpe(
     svp: SVPVideo,
     svp_path: Path,
     image_path: Path,
-    observed: list[str],
-    missing: list[str],
-    violations: list[str],
-    notes: list[str],
-    object_states: list[str],
-    contact_graph: list[str],
-    viewer_contact_graph: list[str],
-    anatomical_contact_graph: list[str],
-    pose_intent: str | None,
-    failure_modes: list[str],
+    findings: _ManualAuditFindings,
 ) -> ObservedRPE:
-    state = _state_scaffold(svp=svp, svp_path=svp_path, image_path=image_path)
-    if object_states:
-        state["object_graph"] = _dedupe(object_states)
-    if contact_graph:
-        state["contact_graph"] = _dedupe(contact_graph)
-    if viewer_contact_graph:
-        state["viewer_contact_graph"] = _dedupe(viewer_contact_graph)
-    if anatomical_contact_graph:
-        state["anatomical_contact_graph"] = _dedupe(anatomical_contact_graph)
-    if pose_intent and pose_intent.strip():
-        state["pose_intent"] = pose_intent.strip()
-    if failure_modes:
-        state["failure_modes"] = _dedupe(failure_modes)
-
     return ObservedRPE(
         artifact=str(image_path),
-        observed=_dedupe(observed),
-        missing=_dedupe(missing),
-        violations=_dedupe(violations),
+        observed=_dedupe(findings.observed),
+        missing=_dedupe(findings.missing),
+        violations=_dedupe(findings.violations),
         notes=_dedupe(
             [
-                *notes,
+                *findings.notes,
                 "manual image audit; state variables supplied by caller",
             ]
         ),
-        state=state,
+        state=_manual_observed_state(
+            svp=svp,
+            svp_path=svp_path,
+            image_path=image_path,
+            findings=findings,
+        ),
     )
+
+
+def _manual_observed_state(
+    *,
+    svp: SVPVideo,
+    svp_path: Path,
+    image_path: Path,
+    findings: _ManualAuditFindings,
+) -> dict[str, Any]:
+    state = _state_scaffold(svp=svp, svp_path=svp_path, image_path=image_path)
+    if findings.object_states:
+        state["object_graph"] = _dedupe(findings.object_states)
+    if findings.contact_graph:
+        state["contact_graph"] = _dedupe(findings.contact_graph)
+    if findings.viewer_contact_graph:
+        state["viewer_contact_graph"] = _dedupe(findings.viewer_contact_graph)
+    if findings.anatomical_contact_graph:
+        state["anatomical_contact_graph"] = _dedupe(findings.anatomical_contact_graph)
+    if findings.pose_intent and findings.pose_intent.strip():
+        state["pose_intent"] = findings.pose_intent.strip()
+    if findings.failure_modes:
+        state["failure_modes"] = _dedupe(findings.failure_modes)
+    return state
 
 
 def _openai_observed_rpe(
