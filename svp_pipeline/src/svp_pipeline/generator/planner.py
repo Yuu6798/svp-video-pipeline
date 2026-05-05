@@ -208,7 +208,49 @@ class Planner:
 
         single_subject_intent = _prompt_indicates_single_subject(user_prompt)
         identity_locks = _append_unique(list(svp.identity_locks), locks)
+        face_layer = self._build_character_locked_face_layer(svp, locks)
+        composition_layer = self._build_character_locked_composition_layer(
+            svp,
+            locks=locks,
+            single_subject_intent=single_subject_intent,
+        )
+        c3 = self._build_character_locked_c3(
+            svp,
+            locks=locks,
+            single_subject_intent=single_subject_intent,
+        )
+        role_visual_cue = svp.role_visual_cue.model_copy(
+            update={
+                "role": svp.role_visual_cue.role or "character",
+                "visual_elements": _append_unique(
+                    list(svp.role_visual_cue.visual_elements),
+                    locks,
+                ),
+            }
+        )
+        variation_policy = svp.variation_policy.model_copy(
+            update={
+                "clothing_variation": "none",
+                "pose_variation": "minimal",
+                "background_structure_variation": "minimal",
+                "color_variation": "small",
+            }
+        )
+        reference_usage_policy = self._build_character_locked_reference_policy(svp)
 
+        return svp.model_copy(
+            update={
+                "identity_locks": identity_locks,
+                "face_layer": face_layer,
+                "composition_layer": composition_layer,
+                "c3": c3,
+                "role_visual_cue": role_visual_cue,
+                "variation_policy": variation_policy,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
+    def _build_character_locked_face_layer(self, svp: SVPVideo, locks: list[str]):
         face_required = _append_unique(list(svp.face_layer.constraints.required), locks)
         face_forbidden = _append_unique(
             list(svp.face_layer.constraints.forbidden),
@@ -230,14 +272,18 @@ class Planner:
                 "distinctive_features": face_features,
             }
         )
+        return face_layer
 
+    def _build_character_locked_composition_layer(
+        self,
+        svp: SVPVideo,
+        *,
+        locks: list[str],
+        single_subject_intent: bool,
+    ):
         composition_required = _append_unique(
             list(svp.composition_layer.constraints.required),
-            (
-                ["single primary character only", *locks]
-                if single_subject_intent
-                else locks
-            ),
+            (["single primary character only", *locks] if single_subject_intent else locks),
         )
         composition_forbidden_additions = ["collage layout", "multi-panel grid"]
         if single_subject_intent:
@@ -252,7 +298,15 @@ class Planner:
         composition_layer = svp.composition_layer.model_copy(
             update={"constraints": composition_constraints}
         )
+        return composition_layer
 
+    def _build_character_locked_c3(
+        self,
+        svp: SVPVideo,
+        *,
+        locks: list[str],
+        single_subject_intent: bool,
+    ):
         has_female_lock = "female character" in locks
         has_male_lock = "male character" in locks
 
@@ -308,24 +362,9 @@ class Planner:
                 "evaluation_criteria": evaluation_criteria,
             }
         )
+        return c3
 
-        role_visual_cue = svp.role_visual_cue.model_copy(
-            update={
-                "role": svp.role_visual_cue.role or "character",
-                "visual_elements": _append_unique(
-                    list(svp.role_visual_cue.visual_elements),
-                    locks,
-                ),
-            }
-        )
-        variation_policy = svp.variation_policy.model_copy(
-            update={
-                "clothing_variation": "none",
-                "pose_variation": "minimal",
-                "background_structure_variation": "minimal",
-                "color_variation": "small",
-            }
-        )
+    def _build_character_locked_reference_policy(self, svp: SVPVideo):
         reference_usage_policy = svp.reference_usage_policy.model_copy(
             update={
                 "use_reference_for": _append_unique(
@@ -377,18 +416,7 @@ class Planner:
                 ),
             }
         )
-
-        return svp.model_copy(
-            update={
-                "identity_locks": identity_locks,
-                "face_layer": face_layer,
-                "composition_layer": composition_layer,
-                "c3": c3,
-                "role_visual_cue": role_visual_cue,
-                "variation_policy": variation_policy,
-                "reference_usage_policy": reference_usage_policy,
-            }
-        )
+        return reference_usage_policy
 
     def _apply_background_noise_controls(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
         risk_flags = _detect_background_noise_risk(user_prompt)
@@ -399,7 +427,62 @@ class Planner:
         character_weapon_contact = _prompt_indicates_character_weapon_contact(user_prompt)
         detailed_background = _detect_detailed_background_request(user_prompt)
         background_forbidden = _background_forbidden_items(risk_flags, detailed_background)
+        composition_layer = self._build_background_noise_composition_layer(
+            svp,
+            risk_flags=risk_flags,
+            single_subject_intent=single_subject_intent,
+            detailed_background=detailed_background,
+            background_forbidden=background_forbidden,
+        )
+        style_layer = self._build_background_noise_style_layer(
+            svp,
+            risk_flags=risk_flags,
+            detailed_background=detailed_background,
+            background_forbidden=background_forbidden,
+        )
+        pose_layer = self._build_background_noise_pose_layer(
+            svp,
+            risk_flags=risk_flags,
+            character_weapon_contact=character_weapon_contact,
+        )
+        c3 = self._build_background_noise_c3(
+            svp,
+            detailed_background=detailed_background,
+            background_forbidden=background_forbidden,
+        )
+        reference_usage_policy = self._build_background_noise_reference_policy(
+            svp,
+            risk_flags=risk_flags,
+            detailed_background=detailed_background,
+            background_forbidden=background_forbidden,
+        )
+        variation_policy = svp.variation_policy.model_copy(
+            update={
+                "background_structure_variation": "minimal",
+                "color_variation": "small",
+            }
+        )
 
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "style_layer": style_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+                "variation_policy": variation_policy,
+            }
+        )
+
+    def _build_background_noise_composition_layer(
+        self,
+        svp: SVPVideo,
+        *,
+        risk_flags: set[str],
+        single_subject_intent: bool,
+        detailed_background: bool,
+        background_forbidden: list[str],
+    ):
         depth_layers = _append_unique(
             list(svp.composition_layer.depth_layers),
             _background_depth_layers(
@@ -438,15 +521,22 @@ class Planner:
                 "constraints": composition_constraints,
             }
         )
+        return composition_layer
 
+    def _build_background_noise_style_layer(
+        self,
+        svp: SVPVideo,
+        *,
+        risk_flags: set[str],
+        detailed_background: bool,
+        background_forbidden: list[str],
+    ):
         style_required_items = [
             "background uses broad smooth shapes and controlled gradients",
             "background micro-line density stays low",
         ]
         if "dense_city" in risk_flags:
-            style_required_items.append(
-                "neon atmosphere is carried by large clean light blocks"
-            )
+            style_required_items.append("neon atmosphere is carried by large clean light blocks")
         if detailed_background:
             style_required_items.append("requested city detail is grouped into clean blocks")
         style_required = _append_unique(
@@ -464,7 +554,15 @@ class Planner:
             }
         )
         style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
+        return style_layer
 
+    def _build_background_noise_pose_layer(
+        self,
+        svp: SVPVideo,
+        *,
+        risk_flags: set[str],
+        character_weapon_contact: bool,
+    ):
         pose_layer = svp.pose_layer
         if "weapon" in risk_flags and character_weapon_contact:
             pose_required = _append_unique(
@@ -496,7 +594,15 @@ class Planner:
                     "contact_points": pose_contact_points,
                 }
             )
+        return pose_layer
 
+    def _build_background_noise_c3(
+        self,
+        svp: SVPVideo,
+        *,
+        detailed_background: bool,
+        background_forbidden: list[str],
+    ):
         if detailed_background:
             global_required_items = [
                 (
@@ -547,7 +653,16 @@ class Planner:
                 "evaluation_criteria": evaluation_criteria,
             }
         )
+        return c3
 
+    def _build_background_noise_reference_policy(
+        self,
+        svp: SVPVideo,
+        *,
+        risk_flags: set[str],
+        detailed_background: bool,
+        background_forbidden: list[str],
+    ):
         reference_usage_policy = svp.reference_usage_policy.model_copy(
             update={
                 "do_not_copy_from_reference": _append_unique(
@@ -572,24 +687,7 @@ class Planner:
                 ),
             }
         )
-
-        variation_policy = svp.variation_policy.model_copy(
-            update={
-                "background_structure_variation": "minimal",
-                "color_variation": "small",
-            }
-        )
-
-        return svp.model_copy(
-            update={
-                "composition_layer": composition_layer,
-                "style_layer": style_layer,
-                "pose_layer": pose_layer,
-                "c3": c3,
-                "reference_usage_policy": reference_usage_policy,
-                "variation_policy": variation_policy,
-            }
-        )
+        return reference_usage_policy
 
     def _apply_object_contact_audit(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
         object_flags = _detect_object_contact_risk(user_prompt)
@@ -809,12 +907,7 @@ class Planner:
         )
         style_required = _append_unique(
             list(svp.style_layer.constraints.required),
-            [
-                (
-                    "katana-adjacent reflections are diffuse lighting patches, "
-                    "not blade-shaped marks"
-                )
-            ],
+            [("katana-adjacent reflections are diffuse lighting patches, not blade-shaped marks")],
         )
         style_constraints = svp.style_layer.constraints.model_copy(
             update={"required": style_required, "forbidden": style_forbidden}
@@ -1150,7 +1243,7 @@ def _background_forbidden_items(
                 "duplicated umbrella ribs",
                 "transparent object filled with noisy background clutter",
             ]
-            )
+        )
     return items
 
 
@@ -1294,9 +1387,9 @@ def _extract_identity_locks(user_prompt: str) -> list[str]:
     has_silver = _contains_unnegated(r"\bsilver\b", lower) or _contains_unnegated_literal(
         prompt, "銀"
     )
-    has_ponytail = _contains_unnegated(
-        r"\bponytail\b", lower
-    ) or _contains_unnegated_literal(prompt, "ポニーテール")
+    has_ponytail = _contains_unnegated(r"\bponytail\b", lower) or _contains_unnegated_literal(
+        prompt, "ポニーテール"
+    )
     if has_silver and has_ponytail:
         locks.append("silver-gray high ponytail")
 
