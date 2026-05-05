@@ -38,6 +38,29 @@ class PipelineResult:
     total_elapsed_sec: float
 
 
+@dataclass
+class _PlannerStageResult:
+    svp: SVPVideo
+    stage: dict[str, Any]
+    cost_usd: float
+    model: str
+    source_path: Path | None
+
+
+@dataclass
+class _ImageStageResult:
+    path: Path | None
+    stage: dict[str, Any]
+    cost_usd: float
+
+
+@dataclass
+class _VideoStageResult:
+    path: Path | None
+    stage: dict[str, Any]
+    cost_usd: float
+
+
 class Pipeline:
     """planner -> image -> video orchestrator."""
 
@@ -102,7 +125,7 @@ class Pipeline:
     ) -> PipelineResult:
         total_started = time.perf_counter()
         run_dir = self._make_timestamp_dir()
-        self._validate_reuse_inputs(
+        self._validate_run_inputs(
             from_svp_path=from_svp_path,
             reuse_run_dir=reuse_run_dir,
             reuse_image=reuse_image,
@@ -119,43 +142,18 @@ class Pipeline:
             separate_character_bg=separate_character_bg,
             effective_reference_image_path=effective_reference_image_path,
         )
-
         svp_source_path = self._resolve_svp_source(
             from_svp_path=from_svp_path,
             reuse_run_dir=reuse_run_dir,
         )
-        if svp_source_path is None:
-            self._emit_progress(progress_callback, "planner_start", {"model": self.planner_model})
-            planner_started = time.perf_counter()
-            svp = self._planner.plan(user_prompt=user_prompt, duration=duration)
-            planner_elapsed = time.perf_counter() - planner_started
-            planner_cost = self.PLANNER_ESTIMATED_COST_USD
-            planner_model_for_log = self._resolve_planner_model_for_log()
-            planner_stage: dict[str, Any] = {
-                "status": "ok",
-                "elapsed_sec": planner_elapsed,
-                "cost_usd": planner_cost,
-                "model": planner_model_for_log,
-            }
-        else:
-            self._emit_progress(
-                progress_callback,
-                "planner_start",
-                {"model": "existing-svp", "source": str(svp_source_path), "reused": True},
-            )
-            planner_started = time.perf_counter()
-            svp = SVPVideo.model_validate_json(svp_source_path.read_text(encoding="utf-8"))
-            planner_elapsed = time.perf_counter() - planner_started
-            planner_cost = 0.0
-            planner_model_for_log = "existing-svp"
-            planner_stage = {
-                "status": "reused",
-                "elapsed_sec": planner_elapsed,
-                "cost_usd": 0.0,
-                "model": planner_model_for_log,
-                "source": str(svp_source_path),
-            }
+        planner_result = self._load_or_plan_svp(
+            user_prompt=user_prompt,
+            duration=duration,
+            svp_source_path=svp_source_path,
+            progress_callback=progress_callback,
+        )
 
+        svp = planner_result.svp
         applied_failure_presets = [str(item) for item in (failure_presets or [])]
         if failure_presets:
             svp = apply_failure_presets_to_svp(svp, list(failure_presets))
@@ -167,26 +165,165 @@ class Pipeline:
             progress_callback,
             "planner_done",
             {
-                "elapsed_sec": planner_elapsed,
-                "cost_usd": planner_cost,
-                "model": planner_model_for_log,
-                "reused": svp_source_path is not None,
-                "source": str(svp_source_path) if svp_source_path is not None else None,
+                "elapsed_sec": planner_result.stage["elapsed_sec"],
+                "cost_usd": planner_result.cost_usd,
+                "model": planner_result.model,
+                "reused": planner_result.source_path is not None,
+                "source": str(planner_result.source_path)
+                if planner_result.source_path is not None
+                else None,
             },
         )
 
-        image_path: Path | None = None
-        video_path: Path | None = None
-        video_stage: dict[str, Any] | None = None
-        video_generator: VideoGenerator | None = None
-        total_cost = planner_cost
+        total_cost = planner_result.cost_usd
         reusable_image_path = self._resolve_reusable_image_path(
             reuse_run_dir=reuse_run_dir,
             reuse_image=reuse_image,
         )
+
         if self.dry_run:
-            if reusable_image_path is not None:
-                image_stage = {
+            image_result = self._build_dry_run_image_stage(
+                svp=svp,
+                reusable_image_path=reusable_image_path,
+                reuse_image=reuse_image,
+                separate_character_bg=separate_character_bg,
+            )
+            video_result = self._build_dry_run_video_stage(svp=svp, no_video=no_video)
+        else:
+            video_generator = self._ensure_video_generator(no_video=no_video)
+            image_result = self._run_image_stage(
+                svp=svp,
+                run_dir=run_dir,
+                reusable_image_path=reusable_image_path,
+                reuse_image=reuse_image,
+                separate_character_bg=separate_character_bg,
+                effective_reference_image_path=effective_reference_image_path,
+                progress_callback=progress_callback,
+            )
+            video_result = self._run_video_stage(
+                svp=svp,
+                run_dir=run_dir,
+                image_path=image_result.path,
+                video_generator=video_generator,
+                progress_callback=progress_callback,
+            )
+
+        total_cost += image_result.cost_usd
+        if video_result is not None:
+            total_cost += video_result.cost_usd
+
+        total_elapsed = time.perf_counter() - total_started
+        log_data = self._build_log_data(
+            user_prompt=user_prompt,
+            from_svp_path=from_svp_path,
+            reuse_run_dir=reuse_run_dir,
+            reuse_image=reuse_image,
+            reference_image_path=reference_image_path,
+            reference_crop=reference_crop,
+            separate_character_bg=separate_character_bg,
+            applied_failure_presets=applied_failure_presets,
+            effective_reference_image_path=effective_reference_image_path,
+            planner_stage=planner_result.stage,
+            image_stage=image_result.stage,
+            video_stage=video_result.stage if video_result is not None else None,
+            total_cost=total_cost,
+            total_elapsed=total_elapsed,
+            svp_path=svp_path,
+            image_path=image_result.path,
+            video_path=video_result.path if video_result is not None else None,
+        )
+
+        log_path = run_dir / "log.json"
+        write_log_json(log_path, log_data)
+
+        return PipelineResult(
+            output_dir=run_dir,
+            svp=svp,
+            svp_path=svp_path,
+            image_path=image_result.path,
+            video_path=video_result.path if video_result is not None else None,
+            log_path=log_path,
+            total_cost_usd=total_cost,
+            total_elapsed_sec=total_elapsed,
+        )
+
+    def _validate_run_inputs(
+        self,
+        from_svp_path: Path | None,
+        reuse_run_dir: Path | None,
+        reuse_image: str | None,
+        reference_image_path: Path | None,
+        reference_crop: int | None,
+        separate_character_bg: bool,
+    ) -> None:
+        self._validate_reuse_inputs(
+            from_svp_path=from_svp_path,
+            reuse_run_dir=reuse_run_dir,
+            reuse_image=reuse_image,
+            reference_image_path=reference_image_path,
+            reference_crop=reference_crop,
+            separate_character_bg=separate_character_bg,
+        )
+
+    def _load_or_plan_svp(
+        self,
+        user_prompt: str,
+        duration: int | None,
+        svp_source_path: Path | None,
+        progress_callback: ProgressCallback | None,
+    ) -> _PlannerStageResult:
+        if svp_source_path is None:
+            self._emit_progress(progress_callback, "planner_start", {"model": self.planner_model})
+            planner_started = time.perf_counter()
+            svp = self._planner.plan(user_prompt=user_prompt, duration=duration)
+            planner_elapsed = time.perf_counter() - planner_started
+            planner_model_for_log = self._resolve_planner_model_for_log()
+            return _PlannerStageResult(
+                svp=svp,
+                stage={
+                    "status": "ok",
+                    "elapsed_sec": planner_elapsed,
+                    "cost_usd": self.PLANNER_ESTIMATED_COST_USD,
+                    "model": planner_model_for_log,
+                },
+                cost_usd=self.PLANNER_ESTIMATED_COST_USD,
+                model=planner_model_for_log,
+                source_path=None,
+            )
+
+        self._emit_progress(
+            progress_callback,
+            "planner_start",
+            {"model": "existing-svp", "source": str(svp_source_path), "reused": True},
+        )
+        planner_started = time.perf_counter()
+        svp = SVPVideo.model_validate_json(svp_source_path.read_text(encoding="utf-8"))
+        planner_elapsed = time.perf_counter() - planner_started
+        return _PlannerStageResult(
+            svp=svp,
+            stage={
+                "status": "reused",
+                "elapsed_sec": planner_elapsed,
+                "cost_usd": 0.0,
+                "model": "existing-svp",
+                "source": str(svp_source_path),
+            },
+            cost_usd=0.0,
+            model="existing-svp",
+            source_path=svp_source_path,
+        )
+
+    def _build_dry_run_image_stage(
+        self,
+        svp: SVPVideo,
+        reusable_image_path: Path | None,
+        reuse_image: str | None,
+        separate_character_bg: bool,
+    ) -> _ImageStageResult:
+        if reusable_image_path is not None:
+            return _ImageStageResult(
+                path=None,
+                stage={
                     "status": "reused_dry_run",
                     "elapsed_sec": 0.0,
                     "estimated_cost_usd": 0.0,
@@ -196,237 +333,332 @@ class Pipeline:
                     "native_size_or_resolution": reuse_image or "image",
                     "was_aspect_coerced": False,
                     "source": str(reusable_image_path),
+                },
+                cost_usd=0.0,
+            )
+
+        image_estimate = self._estimate_image_stage(
+            svp,
+            separate_character_bg=separate_character_bg,
+        )
+        return _ImageStageResult(
+            path=None,
+            stage={
+                "status": "skipped_dry_run",
+                "elapsed_sec": 0.0,
+                **image_estimate,
+            },
+            cost_usd=image_estimate["estimated_cost_usd"],
+        )
+
+    def _build_dry_run_video_stage(
+        self,
+        svp: SVPVideo,
+        no_video: bool,
+    ) -> _VideoStageResult | None:
+        if no_video:
+            return None
+
+        estimated_video_cost = (
+            VideoGenerator.PRICE_PER_SECOND[(self.video_tier, self.video_resolution)]
+            * svp.motion_layer.duration_seconds
+        )
+        endpoint = self._video_endpoint_for_tier(self.video_tier)
+        return _VideoStageResult(
+            path=None,
+            stage={
+                "status": "skipped_dry_run",
+                "elapsed_sec": 0.0,
+                "estimated_cost_usd": estimated_video_cost,
+                "endpoint": endpoint,
+                "tier": self.video_tier,
+                "resolution": self.video_resolution,
+                "aspect_ratio": svp.composition_layer.aspect_ratio,
+                "duration_seconds": svp.motion_layer.duration_seconds,
+                "fal_request_id": None,
+                "mp4_url": None,
+            },
+            cost_usd=estimated_video_cost,
+        )
+
+    def _ensure_video_generator(self, no_video: bool) -> VideoGenerator | None:
+        if no_video:
+            return None
+        if self._video_generator is None:
+            self._video_generator = VideoGenerator(tier=self.video_tier)
+        return self._video_generator
+
+    def _run_image_stage(
+        self,
+        svp: SVPVideo,
+        run_dir: Path,
+        reusable_image_path: Path | None,
+        reuse_image: str | None,
+        separate_character_bg: bool,
+        effective_reference_image_path: Path | None,
+        progress_callback: ProgressCallback | None,
+    ) -> _ImageStageResult:
+        if reusable_image_path is not None:
+            return self._reuse_image_stage(
+                svp=svp,
+                run_dir=run_dir,
+                reusable_image_path=reusable_image_path,
+                reuse_image=reuse_image,
+                progress_callback=progress_callback,
+            )
+
+        return self._generate_image_stage(
+            svp=svp,
+            run_dir=run_dir,
+            separate_character_bg=separate_character_bg,
+            effective_reference_image_path=effective_reference_image_path,
+            progress_callback=progress_callback,
+        )
+
+    def _reuse_image_stage(
+        self,
+        svp: SVPVideo,
+        run_dir: Path,
+        reusable_image_path: Path,
+        reuse_image: str | None,
+        progress_callback: ProgressCallback | None,
+    ) -> _ImageStageResult:
+        self._emit_progress(
+            progress_callback,
+            "image_start",
+            {
+                "backend": "artifact-reuse",
+                "quality_mode": "reused",
+                "source": str(reusable_image_path),
+                "reused": True,
+            },
+        )
+        image_started = time.perf_counter()
+        image_path = run_dir / "image.png"
+        shutil.copy2(reusable_image_path, image_path)
+        image_elapsed = time.perf_counter() - image_started
+        stage = {
+            "status": "reused",
+            "elapsed_sec": image_elapsed,
+            "cost_usd": 0.0,
+            "backend": "artifact",
+            "model": "existing-image",
+            "aspect_ratio": svp.composition_layer.aspect_ratio,
+            "native_size_or_resolution": reuse_image or "image",
+            "was_aspect_coerced": False,
+            "source": str(reusable_image_path),
+        }
+        self._emit_progress(
+            progress_callback,
+            "image_done",
+            {
+                "elapsed_sec": image_elapsed,
+                "cost_usd": 0.0,
+                "backend": "artifact",
+                "model": "existing-image",
+                "reused": True,
+                "source": str(reusable_image_path),
+            },
+        )
+        return _ImageStageResult(path=image_path, stage=stage, cost_usd=0.0)
+
+    def _generate_image_stage(
+        self,
+        svp: SVPVideo,
+        run_dir: Path,
+        separate_character_bg: bool,
+        effective_reference_image_path: Path | None,
+        progress_callback: ProgressCallback | None,
+    ) -> _ImageStageResult:
+        generator = self._resolve_image_generator(separate_character_bg=separate_character_bg)
+        self._emit_progress(
+            progress_callback,
+            "image_start",
+            {
+                "backend": "openai-split-composite"
+                if separate_character_bg
+                else self.image_backend,
+                "quality_mode": self.image_quality_mode,
+                "reference_image": str(effective_reference_image_path)
+                if effective_reference_image_path is not None
+                else None,
+            },
+        )
+        if separate_character_bg:
+            assert effective_reference_image_path is not None
+            image_result = generator.generate(
+                svp=svp,
+                reference_image_path=effective_reference_image_path,
+                output_dir=run_dir,
+                quality_mode=self.image_quality_mode,
+            )
+        elif effective_reference_image_path is None:
+            image_result = generator.generate(svp=svp, quality_mode=self.image_quality_mode)
+        else:
+            image_result = generator.generate(
+                svp=svp,
+                quality_mode=self.image_quality_mode,
+                reference_image_path=effective_reference_image_path,
+            )
+
+        image_path = run_dir / "image.png"
+        image_path.write_bytes(image_result.png_bytes)
+        stage = {
+            "status": "ok",
+            "elapsed_sec": image_result.elapsed_sec,
+            "cost_usd": image_result.cost_usd,
+            "backend": image_result.backend,
+            "model": image_result.model,
+            "aspect_ratio": image_result.aspect_ratio,
+            "native_size_or_resolution": image_result.native_size_or_resolution,
+            "was_aspect_coerced": image_result.was_aspect_coerced,
+        }
+        if separate_character_bg:
+            stage.update(
+                {
+                    "character_path": image_result.character_path.name,
+                    "background_path": image_result.background_path.name,
+                    "composite_path": image_result.composite_path.name,
                 }
-            else:
-                image_estimate = self._estimate_image_stage(
-                    svp,
-                    separate_character_bg=separate_character_bg,
-                )
-                image_stage = {
-                    "status": "skipped_dry_run",
-                    "elapsed_sec": 0.0,
-                    **image_estimate,
-                }
-                total_cost += image_estimate["estimated_cost_usd"]
-            if not no_video:
-                estimated_video_cost = VideoGenerator.PRICE_PER_SECOND[
-                    (self.video_tier, self.video_resolution)
-                ] * svp.motion_layer.duration_seconds
-                endpoint = (
-                    VideoGenerator.ENDPOINT_FAST
-                    if self.video_tier == "fast"
-                    else VideoGenerator.ENDPOINT_STANDARD
-                )
-                video_stage = {
-                    "status": "skipped_dry_run",
-                    "elapsed_sec": 0.0,
-                    "estimated_cost_usd": estimated_video_cost,
+            )
+        self._emit_progress(
+            progress_callback,
+            "image_done",
+            {
+                "elapsed_sec": image_result.elapsed_sec,
+                "cost_usd": image_result.cost_usd,
+                "backend": image_result.backend,
+                "model": image_result.model,
+            },
+        )
+        return _ImageStageResult(
+            path=image_path,
+            stage=stage,
+            cost_usd=image_result.cost_usd,
+        )
+
+    def _resolve_image_generator(self, separate_character_bg: bool) -> Any:
+        if separate_character_bg:
+            return self._resolve_split_image_generator()
+        if self._image_generator is None:
+            self._image_generator = create_image_backend(
+                backend=self.image_backend,
+                model=self.image_model,
+            )
+        return self._image_generator
+
+    def _run_video_stage(
+        self,
+        svp: SVPVideo,
+        run_dir: Path,
+        image_path: Path | None,
+        video_generator: VideoGenerator | None,
+        progress_callback: ProgressCallback | None,
+    ) -> _VideoStageResult | None:
+        if video_generator is None:
+            return None
+        assert image_path is not None
+
+        endpoint = self._video_endpoint_for_tier(video_generator.tier)
+        output_video_path = run_dir / "video.mp4"
+        self._emit_progress(
+            progress_callback,
+            "video_start",
+            {
+                "tier": video_generator.tier,
+                "resolution": self.video_resolution,
+                "duration": svp.motion_layer.duration_seconds,
+            },
+        )
+        try:
+            video_result = video_generator.generate(
+                svp=svp,
+                image_path=image_path,
+                output_path=output_video_path,
+                resolution=self.video_resolution,
+            )
+        except VideoDownloadError as exc:
+            estimated_video_cost = video_generator._calculate_cost(
+                tier=video_generator.tier,
+                resolution=self.video_resolution,
+                duration_seconds=svp.motion_layer.duration_seconds,
+            )
+            return _VideoStageResult(
+                path=None,
+                stage={
+                    "status": "download_failed",
+                    "elapsed_sec": None,
+                    "cost_usd": estimated_video_cost,
                     "endpoint": endpoint,
-                    "tier": self.video_tier,
+                    "tier": video_generator.tier,
                     "resolution": self.video_resolution,
                     "aspect_ratio": svp.composition_layer.aspect_ratio,
                     "duration_seconds": svp.motion_layer.duration_seconds,
                     "fal_request_id": None,
-                    "mp4_url": None,
-                }
-                total_cost += estimated_video_cost
-        else:
-            if not no_video:
-                video_generator = self._video_generator
-                if video_generator is None:
-                    video_generator = VideoGenerator(tier=self.video_tier)
-                    self._video_generator = video_generator
+                    "mp4_url": exc.mp4_url,
+                },
+                cost_usd=estimated_video_cost,
+            )
 
-            if reusable_image_path is not None:
-                self._emit_progress(
-                    progress_callback,
-                    "image_start",
-                    {
-                        "backend": "artifact-reuse",
-                        "quality_mode": "reused",
-                        "source": str(reusable_image_path),
-                        "reused": True,
-                    },
-                )
-                image_started = time.perf_counter()
-                image_path = run_dir / "image.png"
-                shutil.copy2(reusable_image_path, image_path)
-                image_elapsed = time.perf_counter() - image_started
-                image_stage = {
-                    "status": "reused",
-                    "elapsed_sec": image_elapsed,
-                    "cost_usd": 0.0,
-                    "backend": "artifact",
-                    "model": "existing-image",
-                    "aspect_ratio": svp.composition_layer.aspect_ratio,
-                    "native_size_or_resolution": reuse_image or "image",
-                    "was_aspect_coerced": False,
-                    "source": str(reusable_image_path),
-                }
-                self._emit_progress(
-                    progress_callback,
-                    "image_done",
-                    {
-                        "elapsed_sec": image_elapsed,
-                        "cost_usd": 0.0,
-                        "backend": "artifact",
-                        "model": "existing-image",
-                        "reused": True,
-                        "source": str(reusable_image_path),
-                    },
-                )
-            else:
-                if separate_character_bg:
-                    generator = self._resolve_split_image_generator()
-                else:
-                    generator = self._image_generator
-                    if generator is None:
-                        generator = create_image_backend(
-                            backend=self.image_backend,
-                            model=self.image_model,
-                        )
-                        self._image_generator = generator
+        stage = {
+            "status": "ok",
+            "elapsed_sec": video_result.elapsed_sec,
+            "cost_usd": video_result.cost_usd,
+            "endpoint": endpoint,
+            "tier": video_result.tier,
+            "resolution": video_result.resolution,
+            "aspect_ratio": video_result.aspect_ratio,
+            "duration_seconds": video_result.duration_seconds,
+            "fal_request_id": video_result.fal_request_id,
+            "mp4_url": video_result.mp4_url,
+        }
+        self._emit_progress(
+            progress_callback,
+            "video_done",
+            {
+                "elapsed_sec": video_result.elapsed_sec,
+                "cost_usd": video_result.cost_usd,
+                "tier": video_result.tier,
+                "resolution": video_result.resolution,
+            },
+        )
+        return _VideoStageResult(
+            path=video_result.mp4_path,
+            stage=stage,
+            cost_usd=video_result.cost_usd,
+        )
 
-                self._emit_progress(
-                    progress_callback,
-                    "image_start",
-                    {
-                        "backend": "openai-split-composite"
-                        if separate_character_bg
-                        else self.image_backend,
-                        "quality_mode": self.image_quality_mode,
-                        "reference_image": str(effective_reference_image_path)
-                        if effective_reference_image_path is not None
-                        else None,
-                    },
-                )
-                if separate_character_bg:
-                    assert effective_reference_image_path is not None
-                    image_result = generator.generate(
-                        svp=svp,
-                        reference_image_path=effective_reference_image_path,
-                        output_dir=run_dir,
-                        quality_mode=self.image_quality_mode,
-                    )
-                elif effective_reference_image_path is None:
-                    image_result = generator.generate(svp=svp, quality_mode=self.image_quality_mode)
-                else:
-                    image_result = generator.generate(
-                        svp=svp,
-                        quality_mode=self.image_quality_mode,
-                        reference_image_path=effective_reference_image_path,
-                    )
-                image_path = run_dir / "image.png"
-                image_path.write_bytes(image_result.png_bytes)
-                image_stage = {
-                    "status": "ok",
-                    "elapsed_sec": image_result.elapsed_sec,
-                    "cost_usd": image_result.cost_usd,
-                    "backend": image_result.backend,
-                    "model": image_result.model,
-                    "aspect_ratio": image_result.aspect_ratio,
-                    "native_size_or_resolution": image_result.native_size_or_resolution,
-                    "was_aspect_coerced": image_result.was_aspect_coerced,
-                }
-                if separate_character_bg:
-                    image_stage.update(
-                        {
-                            "character_path": image_result.character_path.name,
-                            "background_path": image_result.background_path.name,
-                            "composite_path": image_result.composite_path.name,
-                        }
-                    )
-                total_cost += image_result.cost_usd
-                self._emit_progress(
-                    progress_callback,
-                    "image_done",
-                    {
-                        "elapsed_sec": image_result.elapsed_sec,
-                        "cost_usd": image_result.cost_usd,
-                        "backend": image_result.backend,
-                        "model": image_result.model,
-                    },
-                )
+    @staticmethod
+    def _video_endpoint_for_tier(tier: str) -> str:
+        return VideoGenerator.ENDPOINT_FAST if tier == "fast" else VideoGenerator.ENDPOINT_STANDARD
 
-            if not no_video:
-                assert video_generator is not None
-
-                endpoint = (
-                    VideoGenerator.ENDPOINT_FAST
-                    if video_generator.tier == "fast"
-                    else VideoGenerator.ENDPOINT_STANDARD
-                )
-                output_video_path = run_dir / "video.mp4"
-                self._emit_progress(
-                    progress_callback,
-                    "video_start",
-                    {
-                        "tier": video_generator.tier,
-                        "resolution": self.video_resolution,
-                        "duration": svp.motion_layer.duration_seconds,
-                    },
-                )
-                try:
-                    video_result = video_generator.generate(
-                        svp=svp,
-                        image_path=image_path,
-                        output_path=output_video_path,
-                        resolution=self.video_resolution,
-                    )
-                except VideoDownloadError as exc:
-                    video_path = None
-                    estimated_video_cost = video_generator._calculate_cost(
-                        tier=video_generator.tier,
-                        resolution=self.video_resolution,
-                        duration_seconds=svp.motion_layer.duration_seconds,
-                    )
-                    total_cost += estimated_video_cost
-                    video_stage = {
-                        "status": "download_failed",
-                        "elapsed_sec": None,
-                        "cost_usd": estimated_video_cost,
-                        "endpoint": endpoint,
-                        "tier": video_generator.tier,
-                        "resolution": self.video_resolution,
-                        "aspect_ratio": svp.composition_layer.aspect_ratio,
-                        "duration_seconds": svp.motion_layer.duration_seconds,
-                        "fal_request_id": None,
-                        "mp4_url": exc.mp4_url,
-                    }
-                else:
-                    video_path = video_result.mp4_path
-                    total_cost += video_result.cost_usd
-                    video_stage = {
-                        "status": "ok",
-                        "elapsed_sec": video_result.elapsed_sec,
-                        "cost_usd": video_result.cost_usd,
-                        "endpoint": endpoint,
-                        "tier": video_result.tier,
-                        "resolution": video_result.resolution,
-                        "aspect_ratio": video_result.aspect_ratio,
-                        "duration_seconds": video_result.duration_seconds,
-                        "fal_request_id": video_result.fal_request_id,
-                        "mp4_url": video_result.mp4_url,
-                    }
-                    self._emit_progress(
-                        progress_callback,
-                        "video_done",
-                        {
-                            "elapsed_sec": video_result.elapsed_sec,
-                            "cost_usd": video_result.cost_usd,
-                            "tier": video_result.tier,
-                            "resolution": video_result.resolution,
-                        },
-                    )
-
-        total_elapsed = time.perf_counter() - total_started
+    def _build_log_data(
+        self,
+        user_prompt: str,
+        from_svp_path: Path | None,
+        reuse_run_dir: Path | None,
+        reuse_image: str | None,
+        reference_image_path: Path | None,
+        reference_crop: int | None,
+        separate_character_bg: bool,
+        applied_failure_presets: list[str],
+        effective_reference_image_path: Path | None,
+        planner_stage: dict[str, Any],
+        image_stage: dict[str, Any],
+        video_stage: dict[str, Any] | None,
+        total_cost: float,
+        total_elapsed: float,
+        svp_path: Path,
+        image_path: Path | None,
+        video_path: Path | None,
+    ) -> dict[str, Any]:
         stages: dict[str, Any] = {
             "planner": planner_stage,
             "image": image_stage,
         }
         if video_stage is not None:
             stages["video"] = video_stage
-        log_data = {
+        return {
             "user_prompt": user_prompt,
             "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
             "inputs": {
@@ -452,20 +684,6 @@ class Pipeline:
                 "video": video_path.name if video_path is not None else None,
             },
         }
-
-        log_path = run_dir / "log.json"
-        write_log_json(log_path, log_data)
-
-        return PipelineResult(
-            output_dir=run_dir,
-            svp=svp,
-            svp_path=svp_path,
-            image_path=image_path,
-            video_path=video_path,
-            log_path=log_path,
-            total_cost_usd=total_cost,
-            total_elapsed_sec=total_elapsed,
-        )
 
     def _make_timestamp_dir(self) -> Path:
         base_name = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -501,10 +719,7 @@ class Pipeline:
             was_coerced = aspect_ratio not in OpenAIImageBackend._DIRECT_COMPATIBLE_ASPECTS
             quality = OpenAIImageBackend.QUALITY_MAP[self.image_quality_mode]
             return {
-                "estimated_cost_usd": OpenAIImageBackend.COST_PER_IMAGE_USD[
-                    (size, quality)
-                ]
-                * 2,
+                "estimated_cost_usd": OpenAIImageBackend.COST_PER_IMAGE_USD[(size, quality)] * 2,
                 "backend": "openai-split-composite",
                 "model": OpenAIImageBackend.MODEL_ID,
                 "aspect_ratio": aspect_ratio,
