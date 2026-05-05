@@ -696,6 +696,21 @@ class Planner:
         if _detect_drawn_weapon_request(user_prompt):
             return svp
 
+        pose_layer = self._build_umbrella_katana_contact_pose_layer(svp)
+        composition_layer = self._build_umbrella_katana_contact_composition_layer(svp)
+        c3 = self._build_umbrella_katana_contact_c3(svp)
+        reference_usage_policy = self._build_umbrella_katana_contact_reference_policy(svp)
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
+    def _build_umbrella_katana_contact_pose_layer(self, svp: SVPVideo):
         pose_required = _append_unique(
             list(svp.pose_layer.constraints.required),
             [
@@ -737,7 +752,9 @@ class Planner:
                 "constraints": pose_constraints,
             }
         )
+        return pose_layer
 
+    def _build_umbrella_katana_contact_composition_layer(self, svp: SVPVideo):
         composition_required = _append_unique(
             list(svp.composition_layer.constraints.required),
             [
@@ -762,7 +779,9 @@ class Planner:
         composition_layer = svp.composition_layer.model_copy(
             update={"constraints": composition_constraints}
         )
+        return composition_layer
 
+    def _build_umbrella_katana_contact_c3(self, svp: SVPVideo):
         global_required = _append_unique(
             list(svp.c3.constraints.required),
             [
@@ -804,7 +823,9 @@ class Planner:
                 "evaluation_criteria": evaluation_criteria,
             }
         )
+        return c3
 
+    def _build_umbrella_katana_contact_reference_policy(self, svp: SVPVideo):
         reference_usage_policy = svp.reference_usage_policy.model_copy(
             update={
                 "object_instance_rules": _append_unique(
@@ -827,15 +848,7 @@ class Planner:
                 ),
             }
         )
-
-        return svp.model_copy(
-            update={
-                "composition_layer": composition_layer,
-                "pose_layer": pose_layer,
-                "c3": c3,
-                "reference_usage_policy": reference_usage_policy,
-            }
-        )
+        return reference_usage_policy
 
     def _apply_katana_reflection_policy(self, svp: SVPVideo, user_prompt: str) -> SVPVideo:
         object_flags = _detect_object_contact_risk(user_prompt)
@@ -848,6 +861,27 @@ class Planner:
         if not _prompt_indicates_waist_katana(user_prompt):
             return svp
 
+        reflection_forbidden = _katana_reflection_forbidden_items()
+        pose_layer = self._build_katana_reflection_pose_layer(svp)
+        composition_layer = self._build_katana_reflection_composition_layer(
+            svp,
+            reflection_forbidden,
+        )
+        style_layer = self._build_katana_reflection_style_layer(svp, reflection_forbidden)
+        c3 = self._build_katana_reflection_c3(svp, reflection_forbidden)
+        reference_usage_policy = self._build_katana_reflection_reference_policy(svp)
+
+        return svp.model_copy(
+            update={
+                "composition_layer": composition_layer,
+                "style_layer": style_layer,
+                "pose_layer": pose_layer,
+                "c3": c3,
+                "reference_usage_policy": reference_usage_policy,
+            }
+        )
+
+    def _build_katana_reflection_pose_layer(self, svp: SVPVideo):
         pose_required = _append_unique(
             list(svp.pose_layer.constraints.required),
             [
@@ -869,15 +903,13 @@ class Planner:
             update={"required": pose_required, "forbidden": pose_forbidden}
         )
         pose_layer = svp.pose_layer.model_copy(update={"constraints": pose_constraints})
+        return pose_layer
 
-        reflection_forbidden = [
-            "katana reflection on floor",
-            "katana shadow or silhouette on wall",
-            "blade-like line outside the waist sheath",
-            "object-shaped katana floor reflection",
-            "sharp linear katana reflection",
-            "katana reflection on glass, umbrella, rain, floor, wall, or background",
-        ]
+    def _build_katana_reflection_composition_layer(
+        self,
+        svp: SVPVideo,
+        reflection_forbidden: list[str],
+    ):
         composition_forbidden = _append_unique(
             list(svp.composition_layer.constraints.forbidden),
             reflection_forbidden,
@@ -900,7 +932,13 @@ class Planner:
         composition_layer = svp.composition_layer.model_copy(
             update={"constraints": composition_constraints}
         )
+        return composition_layer
 
+    def _build_katana_reflection_style_layer(
+        self,
+        svp: SVPVideo,
+        reflection_forbidden: list[str],
+    ):
         style_forbidden = _append_unique(
             list(svp.style_layer.constraints.forbidden),
             reflection_forbidden,
@@ -913,7 +951,13 @@ class Planner:
             update={"required": style_required, "forbidden": style_forbidden}
         )
         style_layer = svp.style_layer.model_copy(update={"constraints": style_constraints})
+        return style_layer
 
+    def _build_katana_reflection_c3(
+        self,
+        svp: SVPVideo,
+        reflection_forbidden: list[str],
+    ):
         global_forbidden = _append_unique(
             list(svp.c3.constraints.forbidden),
             reflection_forbidden,
@@ -947,7 +991,9 @@ class Planner:
                 "evaluation_criteria": evaluation_criteria,
             }
         )
+        return c3
 
+    def _build_katana_reflection_reference_policy(self, svp: SVPVideo):
         reference_usage_policy = svp.reference_usage_policy.model_copy(
             update={
                 "object_instance_rules": _append_unique(
@@ -970,16 +1016,7 @@ class Planner:
                 ),
             }
         )
-
-        return svp.model_copy(
-            update={
-                "composition_layer": composition_layer,
-                "style_layer": style_layer,
-                "pose_layer": pose_layer,
-                "c3": c3,
-                "reference_usage_policy": reference_usage_policy,
-            }
-        )
+        return reference_usage_policy
 
 
 def _load_system_prompt() -> str:
@@ -1001,6 +1038,17 @@ def _append_unique(existing: list[str], additions: list[str]) -> list[str]:
             out.append(normalized)
             seen.add(key)
     return out
+
+
+def _katana_reflection_forbidden_items() -> list[str]:
+    return [
+        "katana reflection on floor",
+        "katana shadow or silhouette on wall",
+        "blade-like line outside the waist sheath",
+        "object-shaped katana floor reflection",
+        "sharp linear katana reflection",
+        "katana reflection on glass, umbrella, rain, floor, wall, or background",
+    ]
 
 
 def _prompt_indicates_single_subject(user_prompt: str) -> bool:
