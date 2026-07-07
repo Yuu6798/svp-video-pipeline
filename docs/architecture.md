@@ -29,6 +29,11 @@ MP4 video
 The image prompt uses the composition, face, style, and pose layers. The motion
 prompt uses `motion_layer`, `por_core`, `grv_anchor`, and the motion-specific
 constraints, while referring to the generated image as `@Image1`.
+`generator/planner.py`'s 4 post-processing scenarios (character lock,
+background noise control, umbrella/katana object contact, katana reflection
+policy) are declared as data in `generator/planner_rules.py` (`LayerRule`
+tuples per scenario) and folded onto the SVP by a single `apply_scenario`
+engine, instead of one hand-written method per touched layer.
 When `--reference-image` is provided, the image backend uses that file as an
 additional visual reference; SVP text remains the primary semantic control.
 `--reference-crop` is intended for 3x3 character sheets. It avoids passing the
