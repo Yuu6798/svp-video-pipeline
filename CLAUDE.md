@@ -6,18 +6,45 @@
 
 ## Advisor Strategy（モデル運用方針）
 
-- **メインエージェント**: Opus（設計判断・レビュー・品質ゲート）
-- **サブエージェント**: Sonnet 固定（探索・実装・定型タスク）
+**2026-07-07 改訂**（ugh-prompt-engine の 2026-07-05 体制を移植。高価な
+メインエージェントを設計判断に最大集中させる措置）:
 
-Agent ツールで spawn する際は必ず `model: "sonnet"` を指定すること。
+- **メインエージェント**: Fable 5 — **設計・設計判断のみ**（Design Memo 起草、
+  レビュー指摘の採否判定と対応方針の設計、結果解釈・数値判読、メモリ管理）。
+  **実装・実行・検証など実際に手を動かす作業はサブエージェントに委譲し、
+  メイン自身は行わない**。Fable 非稼働セッションでは Opus が代行
+- **実装・探索サブエージェント**: Sonnet 固定（実装、探索・読み取り中心の調査タスク）
+- **実行・検証・非設計分析サブエージェント**: Opus または Sonnet（実測検証・
+  E2E/スモーク実行、設計判断を伴わないレビュー指摘の分析・トリアージ）
+
+運用細則（委譲固定費の逆ザヤ防止。Web ツール含む全ツールに適用）:
+
+- **マイクロ操作例外**: 単発の状態確認・git 操作・メモリ読み書き・質問など **1–2
+  コールかつ結果ペイロードが軽い操作のみ** メイン直接可。実装・実行・検証・探索・
+  複数ソース Web 調査に加え、レビュースレッド取得/返信投稿など結果が重い操作は
+  コール数によらず委譲する
+- **生データ様式**: 検証・計測の委譲時は生データをファイル保存させメインが直接
+  Read して判読する（要約経由の判断劣化防止。判読=設計判断でメインの職務）
+
+Agent ツールで spawn する際は必ず `model` を明示すること。
 
 ```python
-# 正しい例
-Agent({ model: "sonnet", subagent_type: "Explore", prompt: "..." })
+# 正しい例（実装・探索は Sonnet 固定）
+Agent({"model": "sonnet", "subagent_type": "Explore", "prompt": "..."})
 
-# NG — model 省略すると Opus で動き、コスト効率が下がる
-Agent({ subagent_type: "Explore", prompt: "..." })
+# NG — model 省略するとメインと同モデルで動き、コスト効率が下がる
+Agent({"subagent_type": "Explore", "prompt": "..."})
 ```
+
+## Workflow（Codex × Claude × User 分業）
+
+Claude Code が Task Brief を読んで **Design Memo** を起草 → User が Codex に
+渡して `codex/<topic>` ブランチで実装・PR 作成 → Claude Code が PR をレビュー
+（指摘 or Approve）→ 対応往復 → User が最終マージ判断、のループを回す。
+Claude Code は通常このリポジトリで実装コードを書かない（PR レビュー、
+Design Memo、メモリ管理が担当領域）。メッセージ・フォーマット規約
+（Design Memo / Completion Summary / エスカレーション条件等）の
+source of truth は [`AGENTS.md`](AGENTS.md)。
 
 ## Session Memory（永続記憶ワークフロー）
 
@@ -40,10 +67,15 @@ Agent({ subagent_type: "Explore", prompt: "..." })
 - 「done for today」「that's all」
 - 手動: `/wrap-up`
 
-**実行内容:**
-- 会話の振り返りサマリーを `.claude/memory/YYYY-MM-DD.md` に保存
-- `_index.md` に 1 行サマリーを追記
-- CLAUDE.md への更新候補があればユーザーに提案
+`.claude/skills/wrap-up/SKILL.md` が終了手順全体の **source of truth**
+（8 ステップ: reflection 保存 → `_index.md` 追記 → archive → STATUS.md
+sweep → discipline ゲート）。本ファイルと skill が乖離した場合は
+**skill が勝つ** — このポインタを直し、skill を古い CLAUDE.md に合わせて
+編集してはならない。
+
+discipline ゲート: `.claude/memory/` の直 main push の前に必ず
+`cd svp_pipeline && python -m pytest tests/discipline/ -q` を全パスさせる
+（例外は post-hoc 検出のみのため、違反は main を直接赤くする）。
 
 ## ドキュメント管理ポリシー
 
@@ -114,6 +146,8 @@ README の運用ルール:
 - `tmp_path` でファイルシステムを分離
 - ヘルパーファクトリでオブジェクト生成（モック不使用を推奨）
 - `pytest.approx()` で float 比較
+- 規律自己検証テスト: `svp_pipeline/tests/discipline/`（CLAUDE.md 400 行 cap、
+  README 350 行 cap、memory 構造検証）
 
 ## Git Workflow
 
@@ -130,8 +164,10 @@ README の運用ルール:
 
 ### Pull Request
 
-**変更は必ず Pull Request で実施する**。`main` への直接 push は禁止。
-PR はリンク発行で作成する（`gh pr create` は使わない）。
+**変更は必ず Pull Request で実施する**。`main` への直接 push は禁止
+（唯一の例外は `.claude/memory/` 運用ログ）。GitHub MCP の
+`mcp__github__create_pull_request` で本文付き作成するか、リンク発行で
+作成する（`gh pr create` は使わない）。
 
 ```bash
 # 1. ブランチを push
@@ -141,8 +177,39 @@ git push -u origin <branch-name>
 # https://github.com/Yuu6798/svp-video-pipeline/compare/main...<branch-name>?expand=1
 ```
 
+#### PR 本文の必須記述
+
+PR を作成するときは、**本文を必ず作成する**（リンクのみ提示で本文を空にしない）。
+
+本文に最低限含める要素:
+
+```markdown
+## Summary
+<2–4 行で「何を / なぜ」変更したかを記述>
+
+## Changes
+- <主要な変更点を箇条書き、ファイル単位 or 機能単位>
+
+## Verification
+- [ ] `cd svp_pipeline && ruff check src tests` pass
+- [ ] `cd svp_pipeline && pytest tests/ -q --tb=short` pass
+- [ ] <該当する場合> 手動検証手順とその結果
+
+## Related
+- Phase: <STATUS.md ## Phase の該当箇所等>
+- Brief / Issue: <該当する場合のリンク>
+
+## Notes for Reviewer
+<逸脱事項、未解決課題、次のループへの引き継ぎ等。なければ "None">
+```
+
+ドキュメント単独 PR の場合は `Verification` を「該当なし（docs のみ）」で省略可。
+Codex が PR を作成する場合は [`AGENTS.md`](AGENTS.md) §2 の Completion Summary
+フォーマットを本フォーマットの代わりに使ってよい（情報量は等価）。
+
 ## CI 基本方針
 
-- Push / PR で lint（`ruff check .`）+ test（`pytest -q --tb=short`）が通ることを必須とする
+- Push / PR で lint（`ruff check src tests`）+ test（`pytest tests/ -q --tb=short`、
+  `svp_pipeline/` 配下で実行）が通ることを必須とする
 - CI 通過 = lint clean + 全テスト pass
 - CI 固有のワークフロー詳細は `.github/workflows/*.yml` と `docs/` に記述する
