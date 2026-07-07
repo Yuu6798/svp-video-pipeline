@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from svp_pipeline.schema import SVPVideo
 from svp_pipeline.schema.svp import ReferenceUsagePolicy
+from tests.fixtures.helpers import load_sample
 
 # --------------------------------------------------------------------------- #
 # Sample-based validation
@@ -17,7 +18,10 @@ from svp_pipeline.schema.svp import ReferenceUsagePolicy
 
 
 def _load(samples_dir: Path, name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((samples_dir / name).read_text(encoding="utf-8"))
+    # samples_dir kept for call-site/fixture compatibility; tests.fixtures.helpers
+    # resolves the same tests/samples directory independently.
+    del samples_dir
+    return load_sample(name)
 
 
 def test_sample_shibuya_dusk_validates(samples_dir: Path) -> None:

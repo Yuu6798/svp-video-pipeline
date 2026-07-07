@@ -6,24 +6,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from PIL import Image
-
 from svp_pipeline.schema import SVPVideo
 from svp_pipeline.semantic.image_audit import audit_image_to_observed_rpe
 from svp_pipeline.semantic.models import ObservedRPE
 from svp_pipeline.semantic.repair import repair_svp_from_observed_rpe
 from svp_pipeline.semantic.rpe import diff_rpe, extract_expected_rpe
 from svp_pipeline.semantic.visual_compare import write_visual_comparison
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _write_png(path: Path, color: tuple[int, int, int] = (0, 0, 0)) -> None:
-    Image.new("RGB", (2, 2), color=color).save(path)
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
+from tests.fixtures.helpers import load_sample as _load
+from tests.fixtures.helpers import write_png as _write_png
 
 
 def test_extract_expected_rpe_includes_core_constraints() -> None:

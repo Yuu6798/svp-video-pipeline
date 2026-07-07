@@ -12,7 +12,7 @@ TINY_PNG_BYTES: bytes = (
 )
 
 
-def build_image_response(png_bytes: bytes) -> MagicMock:
+def build_gemini_image_response(png_bytes: bytes) -> MagicMock:
     response = MagicMock()
     candidate = MagicMock()
     candidate.finish_reason = "STOP"
