@@ -98,12 +98,17 @@ def run_noise_probe(
     n: int,
     output_dir: Path,
     image_backend: ImageBackend | None = None,
+    preloaded_svp: SVPVideo | None = None,
 ) -> NoiseFloorReport:
     """Generate ``n`` images from ``svp_path`` and measure all-pairs noise.
 
     ``image_backend`` allows dependency injection of a pre-built backend
     (used by the corpus loop to avoid re-authenticating per SVP, and by
     tests to inject a fake backend without touching real APIs).
+
+    ``preloaded_svp`` allows a caller that already parsed and schema-validated
+    the SVP (e.g. the corpus preflight step) to pass the result in directly,
+    avoiding a second JSON parse of the same file.
     """
     if n < 2:
         raise ValueError(f"n must be >= 2 to compute a pairwise noise floor, got {n}")
@@ -115,7 +120,11 @@ def run_noise_probe(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    svp = SVPVideo.model_validate_json(svp_path.read_text(encoding="utf-8"))
+    svp = (
+        preloaded_svp
+        if preloaded_svp is not None
+        else SVPVideo.model_validate_json(svp_path.read_text(encoding="utf-8"))
+    )
     backend_instance = (
         image_backend if image_backend is not None else create_image_backend(backend=backend)
     )

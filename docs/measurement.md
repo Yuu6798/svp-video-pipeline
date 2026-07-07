@@ -102,6 +102,16 @@ directory (absolute paths are used as-is). Unknown top-level keys, a missing
 required key, or `n < 2` all fail fast with a `ValueError` before any image
 is generated.
 
+Before any generation starts, `run_corpus_noise_probe` preflights the whole
+corpus (`probe/corpus.py::preflight_corpus`): every `svp_files` entry must
+exist, be readable, and pass `SVPVideo` schema validation, and no two entries
+may share an output-directory stem (two different paths both named
+`scene.json` would otherwise collide on `output_dir/scene`, with the later
+run silently overwriting the earlier one's images/`noise_floor.json`). A
+single bad or duplicate-stem entry anywhere in the corpus aborts the run with
+zero backend calls and zero partial reports written, rather than failing
+partway through after incurring cost on earlier entries.
+
 ## Runbook (real API calls — billing applies)
 
 `probe-noise` calls a real, billed image backend `N` times per SVP (or

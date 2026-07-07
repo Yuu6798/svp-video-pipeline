@@ -19,6 +19,7 @@ from svp_pipeline.generator.image import ImageResult
 from svp_pipeline.probe.corpus import (
     NoiseCorpusManifest,
     load_corpus_manifest,
+    preflight_corpus,
     run_corpus_noise_probe,
 )
 from svp_pipeline.probe.noise import (
@@ -351,6 +352,88 @@ def test_run_corpus_noise_probe_writes_one_report_per_svp(tmp_path: Path) -> Non
     assert (output_dir / "b" / "noise_floor.json").is_file()
     # both SVPs generated through the same shared backend instance
     assert backend.calls == 4
+
+
+# ---------------------------------------------------------------------------
+# corpus preflight: fail-fast before any generation
+# ---------------------------------------------------------------------------
+
+
+def test_preflight_corpus_rejects_missing_svp_file(tmp_path: Path) -> None:
+    svp_a = _write_svp(tmp_path, "a.json")
+    manifest = NoiseCorpusManifest(
+        backend="gemini", n=2, svp_files=[svp_a, tmp_path / "missing.json"]
+    )
+
+    with pytest.raises(ValueError, match="SVP file not found"):
+        preflight_corpus(manifest)
+
+
+def test_preflight_corpus_rejects_schema_invalid_svp_file(tmp_path: Path) -> None:
+    svp_a = _write_svp(tmp_path, "a.json")
+    bad_svp = tmp_path / "bad.json"
+    bad_svp.write_text(json.dumps({"not": "a valid svp"}), encoding="utf-8")
+    manifest = NoiseCorpusManifest(backend="gemini", n=2, svp_files=[svp_a, bad_svp])
+
+    with pytest.raises(ValueError, match="failed schema validation"):
+        preflight_corpus(manifest)
+
+
+def test_preflight_corpus_rejects_duplicate_stem(tmp_path: Path) -> None:
+    set_a = tmp_path / "set_a"
+    set_b = tmp_path / "set_b"
+    set_a.mkdir()
+    set_b.mkdir()
+    svp_a = _write_svp(set_a, "scene.json")
+    svp_b = _write_svp(set_b, "scene.json")
+    manifest = NoiseCorpusManifest(backend="gemini", n=2, svp_files=[svp_a, svp_b])
+
+    with pytest.raises(ValueError, match="duplicate output stem") as exc_info:
+        preflight_corpus(manifest)
+    # the error must name both colliding paths so the user can fix the manifest
+    assert str(svp_a) in str(exc_info.value)
+    assert str(svp_b) in str(exc_info.value)
+
+
+def test_run_corpus_noise_probe_second_entry_invalid_makes_zero_backend_calls(
+    tmp_path: Path,
+) -> None:
+    """A broken entry anywhere in the corpus must abort before any generation.
+
+    Regression guard for the pre-preflight behaviour where the loop generated
+    images for earlier (valid) entries before failing on a later broken one,
+    leaving partial cost incurred and partial reports on disk.
+    """
+    svp_a = _write_svp(tmp_path, "a.json")
+    bad_svp = tmp_path / "b.json"
+    bad_svp.write_text(json.dumps({"not": "a valid svp"}), encoding="utf-8")
+    manifest = NoiseCorpusManifest(backend="gemini", n=2, svp_files=[svp_a, bad_svp])
+    backend = _FakeNoiseImageBackend(["white", "black"])
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="failed schema validation"):
+        run_corpus_noise_probe(manifest=manifest, output_dir=output_dir, image_backend=backend)
+
+    assert backend.calls == 0
+    assert not output_dir.exists()
+
+
+def test_run_corpus_noise_probe_duplicate_stem_fails_before_generation(tmp_path: Path) -> None:
+    set_a = tmp_path / "set_a"
+    set_b = tmp_path / "set_b"
+    set_a.mkdir()
+    set_b.mkdir()
+    svp_a = _write_svp(set_a, "scene.json")
+    svp_b = _write_svp(set_b, "scene.json")
+    manifest = NoiseCorpusManifest(backend="gemini", n=2, svp_files=[svp_a, svp_b])
+    backend = _FakeNoiseImageBackend(["white", "black"])
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="duplicate output stem"):
+        run_corpus_noise_probe(manifest=manifest, output_dir=output_dir, image_backend=backend)
+
+    assert backend.calls == 0
+    assert not output_dir.exists()
 
 
 # ---------------------------------------------------------------------------

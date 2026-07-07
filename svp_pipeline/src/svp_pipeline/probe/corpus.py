@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..generator.image import ImageBackend, create_image_backend
+from ..schema import SVPVideo
 from .noise import NoiseFloorReport, run_noise_probe, write_noise_floor_report
 
 _REQUIRED_KEYS = {"backend", "n", "svp_files"}
@@ -74,6 +75,47 @@ def load_corpus_manifest(path: Path) -> NoiseCorpusManifest:
     return NoiseCorpusManifest(backend=backend, n=n, svp_files=svp_files)
 
 
+def preflight_corpus(manifest: NoiseCorpusManifest) -> dict[Path, SVPVideo]:
+    """Validate every SVP file in ``manifest`` before any generation runs.
+
+    Fails fast with ``ValueError`` (zero backend calls, zero images written)
+    if any entry is missing, unreadable, fails ``SVPVideo`` schema
+    validation, or if two entries would collide on the same ``output_dir``
+    sub-directory (i.e. share a stem — e.g. ``set_a/scene.json`` and
+    ``set_b/scene.json`` would both map to ``output_dir/scene``, silently
+    overwriting one probe's images/report with another's).
+
+    Returns each file's parsed ``SVPVideo`` keyed by path so
+    ``run_corpus_noise_probe`` can reuse it instead of re-reading and
+    re-validating the same JSON a second time.
+    """
+    stems: dict[str, Path] = {}
+    loaded: dict[Path, SVPVideo] = {}
+    for svp_file in manifest.svp_files:
+        stem = svp_file.stem
+        if stem in stems:
+            raise ValueError(
+                "corpus manifest has duplicate output stem "
+                f"{stem!r} (would collide in output_dir): "
+                f"{stems[stem]} and {svp_file}"
+            )
+        stems[stem] = svp_file
+
+        if not svp_file.is_file():
+            raise ValueError(f"SVP file not found: {svp_file}")
+        try:
+            raw_text = svp_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValueError(f"SVP file not readable: {svp_file} ({exc})") from exc
+        try:
+            svp = SVPVideo.model_validate_json(raw_text)
+        except Exception as exc:  # pydantic ValidationError et al.
+            raise ValueError(f"SVP file failed schema validation: {svp_file} ({exc})") from exc
+        loaded[svp_file] = svp
+
+    return loaded
+
+
 def run_corpus_noise_probe(
     *,
     manifest: NoiseCorpusManifest,
@@ -87,8 +129,14 @@ def run_corpus_noise_probe(
     share the manifest's single ``backend``/``n`` configuration, and (for
     real backends) a single backend instance so credentials are resolved
     once for the whole corpus run.
+
+    Every SVP file is validated up front via :func:`preflight_corpus` before
+    any backend call is made, so a broken or duplicate-stem entry anywhere
+    in the corpus aborts the whole run with zero cost incurred and zero
+    partial reports written.
     """
     output_dir = Path(output_dir)
+    preloaded = preflight_corpus(manifest)
     backend_instance = (
         image_backend
         if image_backend is not None
@@ -104,6 +152,7 @@ def run_corpus_noise_probe(
             n=manifest.n,
             output_dir=sub_dir,
             image_backend=backend_instance,
+            preloaded_svp=preloaded[svp_file],
         )
         write_noise_floor_report(report, sub_dir)
         reports.append(report)
