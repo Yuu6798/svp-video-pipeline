@@ -129,6 +129,35 @@ def test_log_json_format(tmp_path: Path) -> None:
     assert log_data["outputs"]["image"] == "image.png"
 
 
+def test_log_json_floats_are_rounded(tmp_path: Path) -> None:
+    """log.json に書き込まれる float は小数点 4 桁以下に丸められる（LOG-1）。"""
+    svp = _load("action_ninja.json")
+    planner = FakePlanner(svp)
+    image = FakeImageGenerator()
+    pipeline = Pipeline(
+        output_dir=tmp_path,
+        planner=planner,  # type: ignore[arg-type]
+        image_generator=image,  # type: ignore[arg-type]
+    )
+
+    result = pipeline.run("ninja prompt", duration=6, no_video=True)
+    log_data = json.loads(result.log_path.read_text(encoding="utf-8"))
+
+    def _assert_rounded(node: object) -> None:
+        if isinstance(node, float):
+            assert node == round(node, 4)
+        elif isinstance(node, dict):
+            for value in node.values():
+                _assert_rounded(value)
+        elif isinstance(node, list):
+            for item in node:
+                _assert_rounded(item)
+
+    _assert_rounded(log_data["stages"])
+    _assert_rounded(log_data["total_cost_usd"])
+    _assert_rounded(log_data["total_elapsed_sec"])
+
+
 def test_log_uses_effective_planner_model(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
     planner = FakePlannerWithEffectiveModel(svp, effective_model="claude-opus-4-6")

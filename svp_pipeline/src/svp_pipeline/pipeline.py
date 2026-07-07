@@ -681,15 +681,33 @@ class Pipeline:
                 if effective_reference_image_path is not None
                 else None,
             },
-            "stages": stages,
-            "total_cost_usd": total_cost,
-            "total_elapsed_sec": total_elapsed,
+            "stages": self._round_log_floats(stages),
+            "total_cost_usd": self._round_log_float(total_cost),
+            "total_elapsed_sec": self._round_log_float(total_elapsed),
             "outputs": {
                 "svp": svp_path.name,
                 "image": image_path.name if image_path is not None else None,
                 "video": video_path.name if video_path is not None else None,
             },
         }
+
+    @staticmethod
+    def _round_log_float(value: float | None) -> float | None:
+        """log.json に書き込む float を小数点 4 桁に丸める（None はそのまま通す）。"""
+        if value is None:
+            return None
+        return round(value, 4)
+
+    @classmethod
+    def _round_log_floats(cls, data: Any) -> Any:
+        """log.json の stage dict 内の float を再帰的に 4 桁丸めする。"""
+        if isinstance(data, float):
+            return round(data, 4)
+        if isinstance(data, dict):
+            return {key: cls._round_log_floats(value) for key, value in data.items()}
+        if isinstance(data, list):
+            return [cls._round_log_floats(item) for item in data]
+        return data
 
     def _make_timestamp_dir(self) -> Path:
         base_name = utc_now_compact()
