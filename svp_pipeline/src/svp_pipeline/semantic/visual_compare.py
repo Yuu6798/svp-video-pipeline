@@ -59,6 +59,19 @@ def copy_source_image_to_packet(image_path: Path, output_dir: Path) -> Path:
     return _copy_named_image(Path(image_path), Path(output_dir), "source_image")
 
 
+def pixel_metrics(image_a: Path, image_b: Path) -> dict[str, float]:
+    """Compute pixel RMS / mean-RGB-delta between two same-dimension images.
+
+    Public wrapper around the module-private ``_pixel_metrics`` helper so
+    other modules (e.g. ``probe/noise.py``'s A/A noise-floor harness) can
+    reuse the same pixel comparison logic without duplicating it. Callers
+    are responsible for ensuring both images have equal dimensions
+    (``_build_metrics`` above skips the pixel comparison when they differ;
+    this wrapper does not re-check that).
+    """
+    return _pixel_metrics(Path(image_a), Path(image_b))
+
+
 def validate_image_file(path: Path) -> None:
     """Validate that a file is readable as an image."""
     with Image.open(path) as image:

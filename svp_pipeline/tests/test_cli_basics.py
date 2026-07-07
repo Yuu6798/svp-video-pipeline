@@ -139,6 +139,35 @@ def test_unquoted_multi_word_prompt_is_preserved(
     assert result.exit_code == 0
     assert FakePipeline.instances[0].run_calls[0]["user_prompt"] == "cyberpunk rainy neon city"
 
+def test_leading_token_main_is_treated_as_prompt_word(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A legacy invocation whose prompt happens to start with the word
+    ``main`` (e.g. ``svp-video main character walking``) must not be
+    swallowed as an explicit ``main`` subcommand dispatch -- ``main`` is not
+    one of the newly added subcommands, so it stays part of the prompt text,
+    matching pre-``probe-noise`` behavior exactly (regression guard for the
+    PR #37 follow-up fix to ``_DefaultCommandGroup.parse_args``).
+    """
+    _set_required_keys(monkeypatch)
+    result = runner.invoke(
+        app,
+        ["main", "character", "walking", "--dry-run", "--output", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert FakePipeline.instances[0].run_calls[0]["user_prompt"] == "main character walking"
+
+def test_leading_token_probe_noise_still_dispatches_explicitly() -> None:
+    """``probe-noise`` is a newly added subcommand, so a leading ``probe-noise``
+    token must still explicitly dispatch to it (not be treated as prompt
+    text prefixed with ``main``)."""
+    result = runner.invoke(app, ["probe-noise"])
+
+    assert result.exit_code == 1
+    assert "requires --from-svp or --corpus" in result.output
+
 def test_duration_out_of_range_fails() -> None:
     result = runner.invoke(app, ["prompt", "--duration", "3"])
     assert result.exit_code != 0

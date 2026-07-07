@@ -1,0 +1,9 @@
+{
+  "backend": "gemini",
+  "n": 3,
+  "svp_files": [
+    "action_ninja.json",
+    "shibuya_dusk.json",
+    "still_life_macro.json"
+  ]
+}

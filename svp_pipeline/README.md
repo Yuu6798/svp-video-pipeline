@@ -18,6 +18,7 @@ image generation, and Seedance 2.0 reference-to-video through fal.ai for video.
 | [`docs/cli.md`](../docs/cli.md) | `svp-video` の全ワークフロー例と CLI Options 全項目 |
 | [`docs/architecture.md`](../docs/architecture.md) | パイプライン段階構成と各補助フラグ（reference-image / split-composite / from-svp / reuse-run / repair-from-rpe / audit-image 系）の詳細 |
 | [`docs/backend_comparison.md`](../docs/backend_comparison.md) | Gemini/OpenAI/split-composite の定性比較スナップショット (2026-04-25) |
+| [`docs/measurement.md`](../docs/measurement.md) | `probe-noise` A/A ノイズ床計測: 方法論、`noise_floor.json` スキーマ、実測 runbook、GRIP-1 への接続 |
 
 ## Installation
 
