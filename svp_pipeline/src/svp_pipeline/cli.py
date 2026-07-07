@@ -14,6 +14,7 @@ from typing import Any
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
+from typer.core import TyperGroup
 
 from . import __version__
 from .exceptions import (
@@ -27,6 +28,8 @@ from .exceptions import (
     VideoTimeoutError,
 )
 from .pipeline import Pipeline, PipelineResult
+from .probe.corpus import load_corpus_manifest, run_corpus_noise_probe
+from .probe.noise import NoiseFloorReport, run_noise_probe, write_noise_floor_report
 from .semantic.failure_presets import (
     extract_failure_preset_candidate,
     write_failure_preset_candidate,
@@ -40,10 +43,42 @@ from .semantic.visual_compare import (
 )
 from .utils.logging import setup_verbose_logger
 
+
+class _DefaultCommandGroup(TyperGroup):
+    """Typer group that dispatches to ``main`` when no known subcommand is named.
+
+    Before ``probe-noise`` existed, ``app`` had exactly one ``@app.command()``
+    (``main``), so Typer built a single Click ``Command`` and every invocation
+    (``svp-video "prompt" --dry-run``, ``svp-video --from-svp x.json``, ...)
+    ran ``main`` directly with no subcommand name required. Registering a
+    second command makes Typer build a ``Group`` instead, which normally
+    requires the first token to name a registered subcommand. This override
+    prepends ``"main"`` whenever the first token is not a known subcommand
+    name (including when it is a plain prompt word or an option flag), so all
+    pre-existing invocation patterns keep working unchanged (AC1). It runs in
+    ``parse_args`` (not ``resolve_command``) so the prefix is applied before
+    Click's own arg/option parser ever sees the raw args -- doing it later
+    would already be too late for a leading option like ``--dry-run``.
+    ``ignore_unknown_options``/``add_help_option=False`` on the app keep the
+    group's own (options-free) parser from rejecting flags that belong to
+    ``main``, and let ``--help`` fall through to ``main --help`` unchanged.
+    """
+
+    default_command_name = "main"
+
+    def parse_args(self, ctx: typer.Context, args: list[str]) -> list[str]:
+        if not args or args[0] not in self.commands:
+            args = [self.default_command_name, *args]
+        return super().parse_args(ctx, args)
+
+
 app = typer.Typer(
     name="svp-video",
     help="Generate SVP videos from natural language prompts.",
     add_completion=False,
+    cls=_DefaultCommandGroup,
+    context_settings={"ignore_unknown_options": True},
+    add_help_option=False,
 )
 console = Console()
 
@@ -111,7 +146,7 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.command()
+@app.command("main")
 def main(
     prompt: list[str] | None = typer.Argument(None, help="Video generation prompt."),
     duration: int = typer.Option(5, "--duration", min=4, max=15, help="Duration in seconds."),
@@ -376,6 +411,132 @@ def main(
         archive_drive=archive_drive,
         verbose=verbose,
     )
+
+
+@app.command("probe-noise")
+def probe_noise(
+    from_svp: Path | None = typer.Option(
+        None,
+        "--from-svp",
+        help="SVP JSON file to probe (skips the planner). Mutually exclusive with --corpus.",
+    ),
+    corpus: Path | None = typer.Option(
+        None,
+        "--corpus",
+        help="Corpus manifest JSON for batch probing. Mutually exclusive with --from-svp.",
+    ),
+    backend: str = typer.Option(
+        "gemini",
+        "--backend",
+        help="Image backend: gemini or openai. Ignored (manifest wins) with --corpus.",
+    ),
+    n: int = typer.Option(
+        3,
+        "-n",
+        "--n",
+        help="Number of images to generate from the same SVP (must be >= 2).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("./out/probe-noise"),
+        "--output-dir",
+        help="Output directory for probe images and noise_floor.json.",
+    ),
+) -> None:
+    """Measure A/A regeneration noise floor for a fixed SVP (no planner, no verdict)."""
+    load_dotenv()
+    _validate_probe_noise_mode(from_svp=from_svp, corpus=corpus)
+    if corpus is not None:
+        _run_probe_noise_corpus(corpus=corpus, output_dir=output_dir)
+        return
+    assert from_svp is not None
+    _run_probe_noise_single(from_svp=from_svp, backend=backend, n=n, output_dir=output_dir)
+
+
+def _validate_probe_noise_mode(from_svp: Path | None, corpus: Path | None) -> None:
+    if from_svp is not None and corpus is not None:
+        console.print("[red]Use either --from-svp or --corpus, not both.[/red]")
+        raise typer.Exit(1)
+    if from_svp is None and corpus is None:
+        console.print("[red]probe-noise requires --from-svp or --corpus.[/red]")
+        raise typer.Exit(1)
+
+
+def _run_probe_noise_single(from_svp: Path, backend: str, n: int, output_dir: Path) -> None:
+    _validate_choice("image backend", backend, IMAGE_BACKENDS)
+    if n < 2:
+        console.print(f"[red]-n/--n must be >= 2, got {n}[/red]")
+        raise typer.Exit(2)
+    if not from_svp.is_file():
+        console.print(f"[red]SVP file not found: {from_svp}[/red]")
+        raise typer.Exit(1)
+    _check_api_keys(
+        image_backend=backend,
+        require_planner=False,
+        require_image=True,
+        require_video=False,
+    )
+    _check_output_dir(output_dir)
+    try:
+        report = run_noise_probe(svp_path=from_svp, backend=backend, n=n, output_dir=output_dir)
+        report_path = write_noise_floor_report(report, output_dir)
+    except (SVPPipelineError, ValueError, RuntimeError, OSError) as exc:
+        _handle_error(exc, verbose=False)
+        raise typer.Exit(1) from exc
+    _print_noise_floor_summary(report, report_path)
+
+
+def _run_probe_noise_corpus(corpus: Path, output_dir: Path) -> None:
+    if not corpus.is_file():
+        console.print(f"[red]Corpus manifest not found: {corpus}[/red]")
+        raise typer.Exit(1)
+    try:
+        manifest = load_corpus_manifest(corpus)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    _validate_choice("image backend", manifest.backend, IMAGE_BACKENDS)
+    _check_api_keys(
+        image_backend=manifest.backend,
+        require_planner=False,
+        require_image=True,
+        require_video=False,
+    )
+    _check_output_dir(output_dir)
+    try:
+        reports = run_corpus_noise_probe(manifest=manifest, output_dir=output_dir)
+    except (SVPPipelineError, ValueError, RuntimeError, OSError) as exc:
+        _handle_error(exc, verbose=False)
+        raise typer.Exit(1) from exc
+    _print_corpus_noise_floor_summary(reports)
+
+
+def _print_noise_floor_summary(report: NoiseFloorReport, report_path: Path) -> None:
+    console.print("\nA/A noise floor probe complete.")
+    console.print(f"SVP: {report.svp_path}")
+    console.print(f"Backend: {report.backend} ({report.model})")
+    console.print(f"N: {report.n}  Pairs: {len(report.pairs)}")
+    console.print(
+        "pixel_rms: "
+        f"mean={report.pixel_rms_mean} min={report.pixel_rms_min} max={report.pixel_rms_max}"
+    )
+    console.print(
+        "mean_rgb_delta: "
+        f"mean={report.mean_rgb_delta_mean} min={report.mean_rgb_delta_min} "
+        f"max={report.mean_rgb_delta_max}"
+    )
+    console.print(f"Total cost: ${report.total_cost_usd:.4f}")
+    console.print(f"Report: {report_path}")
+
+
+def _print_corpus_noise_floor_summary(reports: list[NoiseFloorReport]) -> None:
+    console.print(f"\nA/A noise floor corpus probe complete: {len(reports)} SVP file(s).")
+    for report in reports:
+        console.print(
+            f"  {Path(report.svp_path).name}: pixel_rms mean={report.pixel_rms_mean} "
+            f"cost=${report.total_cost_usd:.4f}"
+        )
+    total_cost = round(sum(report.total_cost_usd for report in reports), 4)
+    console.print(f"Total cost: ${total_cost:.4f}")
 
 
 def _resolve_prompt_text(

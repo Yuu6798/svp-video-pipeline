@@ -84,6 +84,7 @@ discipline ゲート: `.claude/memory/` の直 main push の前に必ず
 | [`docs/cli.md`](docs/cli.md) | `svp-video` の全ワークフロー例と CLI Options 全項目 |
 | [`docs/architecture.md`](docs/architecture.md) | パイプライン段階構成と各補助フラグの詳細 |
 | [`docs/backend_comparison.md`](docs/backend_comparison.md) | Gemini/OpenAI/split-composite の定性比較スナップショット |
+| [`docs/measurement.md`](docs/measurement.md) | `probe-noise` A/A ノイズ床計測: 方法論、`noise_floor.json` スキーマ、実測 runbook、GRIP-1 への接続 |
 
 ## ドキュメント管理ポリシー
 
