@@ -1,0 +1,42 @@
+# ci.yml は `.claude/memory/**` を paths-ignore で除外しているため、CLAUDE.md が
+# 唯一許可する main 直 push（memory 運用ログ）では通常 CI が全スキップされる。
+# その結果、discipline テストの post-hoc 検知（malformed STATUS.md/_index.md で
+# main を赤くする契約）が働かなくなってしまう。本ワークフローは memory-only push
+# 経路に限定して discipline ゲートだけを独立に担保する。
+#
+# discipline テスト（svp_pipeline/tests/discipline/）はパッケージ本体に依存しない
+# 純 Markdown/構造検査のため、`pip install -e ".[dev]"` は不要で `pytest>=8.0` の
+# インストールのみで実行できる。
+
+name: Memory Discipline
+
+on:
+  push:
+    branches: [main]
+    paths: ['.claude/memory/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discipline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: svp_pipeline
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: pip install "pytest>=8.0"
+
+      - name: Discipline tests
+        run: python -m pytest tests/discipline/ -q

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    # memory-only push は discipline ゲートを失わない — memory-discipline.yml が担保する
     paths-ignore: ['.claude/memory/**']
   pull_request:
 
