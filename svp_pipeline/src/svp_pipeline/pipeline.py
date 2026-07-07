@@ -6,9 +6,10 @@ import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from .exceptions import VideoDownloadError
 from .generator.composite import SplitCompositeImageGenerator
@@ -20,6 +21,7 @@ from .generator.video import VideoGenerator, VideoResolution
 from .schema import SVPVideo
 from .semantic.failure_presets import apply_failure_presets_to_svp
 from .utils.logging import write_log_json
+from .utils.timestamps import utc_now_compact, utc_now_iso
 
 ProgressCallback = Callable[[str, dict[str, Any]], None]
 
@@ -485,7 +487,10 @@ class Pipeline:
             },
         )
         if separate_character_bg:
-            assert effective_reference_image_path is not None
+            if effective_reference_image_path is None:
+                raise RuntimeError(
+                    "effective_reference_image_path must be set when separate_character_bg is True"
+                )
             image_result = generator.generate(
                 svp=svp,
                 reference_image_path=effective_reference_image_path,
@@ -557,7 +562,8 @@ class Pipeline:
     ) -> _VideoStageResult | None:
         if video_generator is None:
             return None
-        assert image_path is not None
+        if image_path is None:
+            raise RuntimeError("image_path must be set before running the video stage")
 
         endpoint = self._video_endpoint_for_tier(video_generator.tier)
         output_video_path = run_dir / "video.mp4"
@@ -660,7 +666,7 @@ class Pipeline:
             stages["video"] = video_stage
         return {
             "user_prompt": user_prompt,
-            "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "timestamp": utc_now_iso(),
             "inputs": {
                 "from_svp": str(from_svp_path) if from_svp_path is not None else None,
                 "reuse_run": str(reuse_run_dir) if reuse_run_dir is not None else None,
@@ -686,7 +692,7 @@ class Pipeline:
         }
 
     def _make_timestamp_dir(self) -> Path:
-        base_name = datetime.now().strftime("%Y%m%d-%H%M%S")
+        base_name = utc_now_compact()
         candidate = self.output_dir / base_name
         index = 1
         while candidate.exists():
@@ -806,11 +812,6 @@ class Pipeline:
     def _crop_reference_grid(source: Path, crop_index: int, run_dir: Path) -> Path:
         if not 1 <= crop_index <= 9:
             raise ValueError("reference_crop must be between 1 and 9")
-
-        try:
-            from PIL import Image
-        except ImportError as exc:  # pragma: no cover - dependency is declared in pyproject
-            raise ValueError("Pillow is required for --reference-crop") from exc
 
         try:
             with Image.open(source) as image:

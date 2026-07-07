@@ -77,6 +77,14 @@ discipline ゲート: `.claude/memory/` の直 main push の前に必ず
 `cd svp_pipeline && python -m pytest tests/discipline/ -q` を全パスさせる
 （例外は post-hoc 検出のみのため、違反は main を直接赤くする）。
 
+## 設計ドキュメント索引
+
+| ドキュメント | 内容 |
+|---|---|
+| [`docs/cli.md`](docs/cli.md) | `svp-video` の全ワークフロー例と CLI Options 全項目 |
+| [`docs/architecture.md`](docs/architecture.md) | パイプライン段階構成と各補助フラグの詳細 |
+| [`docs/backend_comparison.md`](docs/backend_comparison.md) | Gemini/OpenAI/split-composite の定性比較スナップショット |
+
 ## ドキュメント管理ポリシー
 
 **CLAUDE.md はリポジトリ横断の普遍的内容のみ記述する (目標: 400 行以内)。**
@@ -121,7 +129,8 @@ README の運用ルール:
 ### Style
 
 - ruff 準拠（line-length はプロジェクト設定に従う）
-- 型ヒント必須: `Optional`, `List`, `Dict` を使用
+- 型ヒント必須: PEP 604/585 スタイル（`X | None`, `list[str]`, `dict[str, int]`）
+  を使用（ruff UP と整合）
 - `from __future__ import annotations` を全モジュール先頭に記述
 - docstring / コメントは日本語 OK
 - float 表示は小数点 3–4 桁に丸める
@@ -130,7 +139,8 @@ README の運用ルール:
 
 - **Frozen dataclass / pydantic model**: 値オブジェクトは不変で定義する
 - **フォールバックチェーン**: import 時に try/except でフラグ設定、実行時に分岐
-- **値のクランプ**: 正規化が必要な float 値は `max(lo, min(hi, value))` で範囲内に収める
+- **値のクランプ**: 正規化が必要な float 値は `max(lo, min(hi, value))` で範囲内に
+  収める（画像/配列処理では `np.clip` / PIL 等の同等手段でよい）
 - **タイムスタンプ**: UTC, ISO 8601 形式で保存
 
 ### Error Handling
@@ -144,7 +154,9 @@ README の運用ルール:
 
 - テストファイル: `tests/test_*.py`
 - `tmp_path` でファイルシステムを分離
-- ヘルパーファクトリでオブジェクト生成（モック不使用を推奨）
+- ドメインオブジェクトはヘルパーファクトリで生成。外部 API 境界
+  （OpenAI/Gemini/fal/Drive）は `tests/fixtures/mock_*.py` の fake レスポンスで
+  密閉する（実 API 呼び出し禁止）
 - `pytest.approx()` で float 比較
 - 規律自己検証テスト: `svp_pipeline/tests/discipline/`（CLAUDE.md 400 行 cap、
   README 350 行 cap、memory 構造検証）

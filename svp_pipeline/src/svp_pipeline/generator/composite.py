@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from openai import OpenAI, OpenAIError
 from PIL import Image, ImageEnhance, ImageFilter
 
-from ..exceptions import ImageAPIError, ImageRefusalError
 from ..schema import SVPVideo
 from .image_openai import OpenAIImageBackend, OpenAIQuality, OpenAISize
 
@@ -128,8 +126,8 @@ class SplitCompositeImageGenerator:
                 output_format="png",
             )
         except OpenAIError as exc:
-            _raise_openai_image_error(exc)
-        return _extract_png_bytes(response)
+            self._openai_backend._raise_wrapped_openai_error(exc)
+        return self._openai_backend._extract_png_bytes(response)
 
     def _generate_background(
         self,
@@ -147,8 +145,8 @@ class SplitCompositeImageGenerator:
                 output_format="png",
             )
         except OpenAIError as exc:
-            _raise_openai_image_error(exc)
-        return _extract_png_bytes(response)
+            self._openai_backend._raise_wrapped_openai_error(exc)
+        return self._openai_backend._extract_png_bytes(response)
 
 
 def composite_character_background(character_path: Path, background_path: Path) -> Image.Image:
@@ -304,26 +302,3 @@ def _looks_subject_related(item: str) -> bool:
 
 def _build_reference_file(reference_image_path: Path) -> tuple[str, bytes, str]:
     return OpenAIImageBackend._build_reference_file(reference_image_path)
-
-
-def _extract_png_bytes(response: Any) -> bytes:
-    data_items = getattr(response, "data", None) or []
-    if not data_items:
-        raise ImageRefusalError("openai image generation returned empty data")
-    b64_json = getattr(data_items[0], "b64_json", None)
-    if not b64_json:
-        raise ImageRefusalError("openai image generation returned no image payload")
-    try:
-        return base64.b64decode(b64_json)
-    except Exception as exc:  # noqa: BLE001
-        raise ImageAPIError("openai image payload decode failed") from exc
-
-
-def _raise_openai_image_error(exc: OpenAIError) -> Literal[False]:
-    if OpenAIImageBackend._is_content_policy_error(exc):
-        raise ImageRefusalError("openai image generation refused by content policy") from exc
-    if getattr(exc, "status_code", None) == 401:
-        raise ImageAPIError("openai image generation failed: unauthorized (401)") from exc
-    if getattr(exc, "status_code", None) == 429:
-        raise ImageAPIError("openai image generation failed: rate limited (429)") from exc
-    raise ImageAPIError("openai image generation failed") from exc

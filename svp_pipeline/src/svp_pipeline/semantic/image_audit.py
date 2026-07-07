@@ -12,7 +12,6 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +19,7 @@ from openai import OpenAI, OpenAIError
 
 from ..exceptions import ImageAPIError
 from ..schema import SVPVideo
+from ..utils.timestamps import utc_now_compact
 from .models import ExpectedRPE, ObservedRPE
 from .rpe import extract_expected_rpe, write_json
 from .visual_compare import copy_source_image_to_packet, validate_image_file
@@ -386,7 +386,7 @@ def _image_data_url(path: Path) -> str:
 
 def _make_audit_dir(output_root: Path) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
-    base = output_root / f"audit-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    base = output_root / f"audit-{utc_now_compact()}"
     candidate = base
     index = 1
     while candidate.exists():

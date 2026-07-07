@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..utils.timestamps import utc_now_iso
+
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "svp-pipeline"
@@ -161,7 +163,7 @@ def update_log_with_urls(
     drive_urls.update(new_urls)
     if drive_folder_url:
         drive_urls["drive_folder"] = drive_folder_url
-    drive_urls["uploaded_at"] = _utc_now_iso()
+    drive_urls["uploaded_at"] = utc_now_iso()
     log["drive_urls"] = drive_urls
 
     tmp_path = log_path.with_name(f"{log_path.name}.tmp")
@@ -386,10 +388,6 @@ def _folder_url(folder_id: str) -> str:
 
 def _format_drive_path(drive_root: str, run_id: str) -> str:
     return f"{drive_root}/by-date/{run_id_to_date(run_id)}/{run_id}"
-
-
-def _utc_now_iso() -> str:
-    return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ Snapshot 等) は [`svp_pipeline/README.md`](svp_pipeline/README.md) を参照�
 - API keys:
   - `ANTHROPIC_API_KEY` — planner、必須
   - `GOOGLE_API_KEY` — image、デフォルトの Gemini backend に必須
+    （`GEMINI_API_KEY` でも代替可。両方設定時は `GOOGLE_API_KEY` を優先）
   - `OPENAI_API_KEY` — OpenAI backend を使う場合のみ。実行時に
     `--image-backend openai` を併用する必要あり
   - `FAL_KEY` — video full run のみ

@@ -1070,7 +1070,8 @@ def _run_repair_from_rpe(
     if from_svp is not None:
         base_svp = from_svp
     else:
-        assert reuse_run is not None
+        if reuse_run is None:
+            raise RuntimeError("either from_svp or reuse_run must be set")
         base_svp = reuse_run / "svp.json"
     return repair_svp_from_observed_rpe(
         base_svp_path=base_svp,
@@ -1119,7 +1120,8 @@ def _run_image_audit(
     if from_svp is not None:
         base_svp = from_svp
     else:
-        assert reuse_run is not None
+        if reuse_run is None:
+            raise RuntimeError("either from_svp or reuse_run must be set")
         base_svp = reuse_run / "svp.json"
     return audit_image_to_observed_rpe(
         svp_path=base_svp,

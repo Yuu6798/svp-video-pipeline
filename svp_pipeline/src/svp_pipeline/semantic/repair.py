@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from ..schema import SVPVideo
+from ..utils.timestamps import utc_now_compact
 from .models import ObservedRPE, RepairProposal, SemanticDiffReport
 from .rpe import diff_rpe, extract_expected_rpe, load_observed_rpe, write_json
 
@@ -213,7 +213,7 @@ def _repair_reference_policy(svp: SVPVideo, additions: _RepairAdditions):
 
 def _make_repair_dir(output_root: Path) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
-    base = output_root / f"repair-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    base = output_root / f"repair-{utc_now_compact()}"
     candidate = base
     index = 1
     while candidate.exists():
