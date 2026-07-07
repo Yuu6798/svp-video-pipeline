@@ -18,14 +18,11 @@ from svp_pipeline.semantic.failure_presets import (
 )
 from svp_pipeline.semantic.models import ObservedRPE, SemanticDiffReport
 from svp_pipeline.utils.prompt_render import append_reference_usage_policy, render_image_prompt
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
+from tests.fixtures.helpers import load_sample
 
 
 def _load_svp() -> SVPVideo:
-    return SVPVideo.model_validate_json(
-        (SAMPLES_DIR / "shibuya_dusk.json").read_text(encoding="utf-8")
-    )
+    return load_sample("shibuya_dusk.json")
 
 
 def test_extract_duplicate_identity_preset() -> None:

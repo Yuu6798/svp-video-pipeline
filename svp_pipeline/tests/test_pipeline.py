@@ -4,71 +4,18 @@ from __future__ import annotations
 
 import json
 import re
-from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from PIL import Image
-
-from svp_pipeline.generator.image import ImageResult
 from svp_pipeline.generator.image_openai import OpenAIImageBackend
 from svp_pipeline.pipeline import Pipeline
 from svp_pipeline.schema import SVPVideo
+from tests.fixtures.fakes import FakeImageGenerator, FakePlanner, FakePlannerWithEffectiveModel
+from tests.fixtures.helpers import load_sample as _load
+from tests.fixtures.helpers import valid_png_bytes as _valid_png_bytes
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES
-from tests.fixtures.mock_openai import build_image_response
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
-
-
-def _valid_png_bytes(color: str = "white") -> bytes:
-    buffer = BytesIO()
-    Image.new("RGB", (4, 4), color).save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
-class FakePlanner:
-    def __init__(self, svp: SVPVideo) -> None:
-        self.svp = svp
-        self.calls: list[tuple[str, int | None]] = []
-
-    def plan(self, user_prompt: str, duration: int | None = None) -> SVPVideo:
-        self.calls.append((user_prompt, duration))
-        return self.svp
-
-
-class FakePlannerWithEffectiveModel(FakePlanner):
-    def __init__(self, svp: SVPVideo, effective_model: str) -> None:
-        super().__init__(svp)
-        self.model = effective_model
-
-
-class FakeImageGenerator:
-    def __init__(self) -> None:
-        self.calls: list[tuple[SVPVideo, str, Path | None]] = []
-
-    def generate(
-        self,
-        svp: SVPVideo,
-        quality_mode: str = "normal",
-        reference_image_path: Path | None = None,
-    ) -> ImageResult:
-        self.calls.append((svp, quality_mode, reference_image_path))
-        return ImageResult(
-            png_bytes=TINY_PNG_BYTES,
-            cost_usd=0.08 if quality_mode == "normal" else 0.04,
-            elapsed_sec=0.12,
-            raw_prompt="prompt",
-            model="gemini-3-pro-image-preview",
-            backend="gemini",
-            aspect_ratio="16:9",
-            native_size_or_resolution="2K" if quality_mode == "normal" else "1K",
-            was_aspect_coerced=False,
-        )
+from tests.fixtures.mock_openai import build_openai_image_response
 
 
 class FakeSplitImageGenerator:
@@ -116,8 +63,8 @@ class DummyOpenAIClient:
     def __init__(self) -> None:
         png_bytes = _valid_png_bytes()
         self.images = MagicMock()
-        self.images.edit.return_value = build_image_response(png_bytes)
-        self.images.generate.return_value = build_image_response(png_bytes)
+        self.images.edit.return_value = build_openai_image_response(png_bytes)
+        self.images.generate.return_value = build_openai_image_response(png_bytes)
 
 
 def test_pipeline_run_with_no_video(tmp_path: Path) -> None:

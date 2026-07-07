@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from svp_pipeline.generator.composite import _render_background_prompt
-from svp_pipeline.schema import SVPVideo
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
+from tests.fixtures.helpers import load_sample as _load
 
 
 def test_background_prompt_does_not_force_cyberpunk_scene() -> None:

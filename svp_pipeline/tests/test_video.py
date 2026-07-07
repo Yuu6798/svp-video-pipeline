@@ -10,7 +10,7 @@ import pytest
 
 from svp_pipeline.exceptions import VideoAPIError, VideoDownloadError, VideoTimeoutError
 from svp_pipeline.generator.video import VideoGenerator
-from svp_pipeline.schema import SVPVideo
+from tests.fixtures.helpers import load_sample as _load
 from tests.fixtures.mock_fal import (
     TINY_MP4_BYTES,
     build_successful_subscribe_response,
@@ -19,12 +19,7 @@ from tests.fixtures.mock_fal import (
 )
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES
 
-SAMPLES_DIR = Path(__file__).parent / "samples"
 SYNC_SUBSCRIBE_PATH = "svp_pipeline.generator.video.fal_client.SyncClient.subscribe"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
 
 
 def _write_ref_image(tmp_path: Path) -> Path:

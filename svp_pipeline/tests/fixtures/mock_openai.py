@@ -24,7 +24,7 @@ class MockOpenAIError(OpenAIError):
         self.body = {"error": {"code": code, "message": message}}
 
 
-def build_image_response(png_bytes: bytes) -> MagicMock:
+def build_openai_image_response(png_bytes: bytes) -> MagicMock:
     response = MagicMock()
     response.data = [MagicMock()]
     response.data[0].b64_json = base64.b64encode(png_bytes).decode("ascii")

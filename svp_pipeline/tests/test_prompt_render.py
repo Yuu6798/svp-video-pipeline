@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
 from svp_pipeline.schema import SVPVideo
 from svp_pipeline.utils.prompt_render import (
@@ -11,12 +10,7 @@ from svp_pipeline.utils.prompt_render import (
     render_image_prompt,
     render_motion_prompt,
 )
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
+from tests.fixtures.helpers import load_sample as _load
 
 
 def test_render_includes_por_core() -> None:

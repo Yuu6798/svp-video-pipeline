@@ -7,90 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from svp_pipeline.exceptions import VideoDownloadError
-from svp_pipeline.generator.image import ImageResult
-from svp_pipeline.generator.video import VideoResult
 from svp_pipeline.pipeline import Pipeline
-from svp_pipeline.schema import SVPVideo
-from tests.fixtures.mock_fal import TINY_MP4_BYTES
+from tests.fixtures.fakes import FakeImageGeneratorQualityOnly as FakeImageGenerator
+from tests.fixtures.fakes import FakePlanner, FakeVideoGenerator
+from tests.fixtures.helpers import load_sample as _load
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
-
-
-class FakePlanner:
-    def __init__(self, svp: SVPVideo) -> None:
-        self.svp = svp
-        self.calls: list[tuple[str, int | None]] = []
-        self.model = "claude-haiku-4-5"
-
-    def plan(self, user_prompt: str, duration: int | None = None) -> SVPVideo:
-        self.calls.append((user_prompt, duration))
-        return self.svp
-
-
-class FakeImageGenerator:
-    def __init__(self) -> None:
-        self.calls: list[str] = []
-
-    def generate(self, svp: SVPVideo, quality_mode: str = "normal") -> ImageResult:
-        self.calls.append(quality_mode)
-        return ImageResult(
-            png_bytes=TINY_PNG_BYTES,
-            cost_usd=0.08 if quality_mode == "normal" else 0.04,
-            elapsed_sec=0.11,
-            raw_prompt="image prompt",
-            model="gemini-3-pro-image-preview",
-            backend="gemini",
-            aspect_ratio=svp.composition_layer.aspect_ratio,
-            native_size_or_resolution="2K" if quality_mode == "normal" else "1K",
-            was_aspect_coerced=False,
-        )
-
-
-class FakeVideoGenerator:
-    def __init__(self, tier: str = "standard", fail_download: bool = False) -> None:
-        self.tier = tier
-        self.fail_download = fail_download
-        self.calls: list[tuple[str, str, int]] = []
-        self.image_paths: list[Path] = []
-
-    def generate(
-        self,
-        svp: SVPVideo,
-        image_path: Path,
-        output_path: Path,
-        resolution: str = "720p",
-    ) -> VideoResult:
-        self.calls.append((self.tier, resolution, svp.motion_layer.duration_seconds))
-        self.image_paths.append(image_path)
-        if self.fail_download:
-            raise VideoDownloadError(
-                "download failed",
-                mp4_url="https://mock.fal.media/download-failed.mp4",
-            )
-        output_path.write_bytes(TINY_MP4_BYTES)
-        return VideoResult(
-            mp4_path=output_path,
-            cost_usd=1.512 if resolution == "720p" else 0.5375,
-            elapsed_sec=0.9,
-            raw_prompt="video prompt",
-            tier=self.tier,  # type: ignore[arg-type]
-            resolution=resolution,  # type: ignore[arg-type]
-            aspect_ratio=svp.composition_layer.aspect_ratio,
-            duration_seconds=svp.motion_layer.duration_seconds,
-            fal_request_id="req_mock",
-            mp4_url="https://mock.fal.media/video.mp4",
-        )
-
-    def _calculate_cost(self, tier: str, resolution: str, duration_seconds: int) -> float:
-        if tier == "fast" and resolution == "480p":
-            return 0.1075 * duration_seconds
-        return 0.3024 * duration_seconds
 
 
 def test_full_pipeline_with_video(tmp_path: Path) -> None:

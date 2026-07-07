@@ -11,18 +11,13 @@ import pytest
 from svp_pipeline.exceptions import ImageAPIError, ImageRefusalError
 from svp_pipeline.generator.image_openai import OpenAIImageBackend
 from svp_pipeline.schema import SVPVideo
+from tests.fixtures.helpers import load_sample as _load
 from tests.fixtures.mock_gemini import TINY_PNG_BYTES
 from tests.fixtures.mock_openai import (
     MockOpenAIError,
     build_content_policy_error,
-    build_image_response,
+    build_openai_image_response,
 )
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
 
 
 class DummyOpenAIClient:
@@ -45,7 +40,7 @@ def _with_aspect(svp: SVPVideo, aspect: str) -> SVPVideo:
 def test_generate_returns_image_result() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     result = backend.generate(svp=svp, quality_mode="normal")
@@ -57,7 +52,7 @@ def test_generate_returns_image_result() -> None:
 
 def test_size_mapping_16_9_landscape() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="normal")
@@ -67,7 +62,7 @@ def test_size_mapping_16_9_landscape() -> None:
 
 def test_size_mapping_1_1_square() -> None:
     svp = _with_aspect(_load("shibuya_dusk.json"), "1:1")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="normal")
@@ -77,7 +72,7 @@ def test_size_mapping_1_1_square() -> None:
 
 def test_size_mapping_9_16_portrait() -> None:
     svp = _with_aspect(_load("shibuya_dusk.json"), "9:16")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="normal")
@@ -87,7 +82,7 @@ def test_size_mapping_9_16_portrait() -> None:
 
 def test_size_mapping_auto_passthrough() -> None:
     svp = _with_aspect(_load("shibuya_dusk.json"), "auto")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="normal")
@@ -98,7 +93,7 @@ def test_size_mapping_auto_passthrough() -> None:
 def test_size_coercion_21_9_to_landscape() -> None:
     svp = _load("action_ninja.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     with pytest.warns(UserWarning, match="coerced aspect ratio"):
@@ -110,7 +105,7 @@ def test_size_coercion_21_9_to_landscape() -> None:
 
 def test_quality_mode_normal_to_high() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="normal")
@@ -120,7 +115,7 @@ def test_quality_mode_normal_to_high() -> None:
 
 def test_quality_mode_cheap_to_low() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     backend.generate(svp=svp, quality_mode="cheap")
@@ -131,7 +126,7 @@ def test_quality_mode_cheap_to_low() -> None:
 def test_cost_calculation_1536x1024_high() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     result = backend.generate(svp=svp, quality_mode="normal")
@@ -142,7 +137,7 @@ def test_cost_calculation_1536x1024_high() -> None:
 def test_b64_decoded_to_bytes() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     result = backend.generate(svp=svp, quality_mode="normal")
@@ -154,7 +149,7 @@ def test_reference_image_uses_edit_endpoint(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
     reference = tmp_path / "reference.png"
     reference.write_bytes(TINY_PNG_BYTES)
-    client = DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     backend = OpenAIImageBackend(client=client)
 
     result = backend.generate(
@@ -182,7 +177,7 @@ def test_reference_file_read_error_raises_value_error(tmp_path: Path) -> None:
 def test_image_result_backend_field() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     result = backend.generate(svp=svp, quality_mode="normal")
@@ -193,7 +188,7 @@ def test_image_result_backend_field() -> None:
 def test_image_result_native_size_field() -> None:
     svp = _load("shibuya_dusk.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     result = backend.generate(svp=svp, quality_mode="normal")
@@ -236,7 +231,7 @@ def test_auth_error_wrapped() -> None:
 def test_coercion_emits_warning() -> None:
     svp = _load("action_ninja.json")
     backend = OpenAIImageBackend(
-        client=DummyOpenAIClient(response=build_image_response(TINY_PNG_BYTES))
+        client=DummyOpenAIClient(response=build_openai_image_response(TINY_PNG_BYTES))
     )
 
     with pytest.warns(UserWarning, match="coerced aspect ratio"):

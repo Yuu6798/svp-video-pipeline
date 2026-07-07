@@ -11,13 +11,12 @@ import pytest
 from svp_pipeline.exceptions import ImageAPIError, ImageRefusalError
 from svp_pipeline.generator.image import ImageGenerator
 from svp_pipeline.schema import SVPVideo
-from tests.fixtures.mock_gemini import TINY_PNG_BYTES, build_image_response, build_refusal_response
-
-SAMPLES_DIR = Path(__file__).parent / "samples"
-
-
-def _load(name: str) -> SVPVideo:
-    return SVPVideo.model_validate_json((SAMPLES_DIR / name).read_text(encoding="utf-8"))
+from tests.fixtures.helpers import load_sample as _load
+from tests.fixtures.mock_gemini import (
+    TINY_PNG_BYTES,
+    build_gemini_image_response,
+    build_refusal_response,
+)
 
 
 class DummyClient:
@@ -31,7 +30,7 @@ class DummyClient:
 
 def test_generate_returns_image_result() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     result = generator.generate(svp=svp)
@@ -44,7 +43,7 @@ def test_generate_returns_image_result() -> None:
 
 def test_generate_passes_correct_aspect_ratio() -> None:
     svp = _load("action_ninja.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     generator.generate(svp=svp, resolution="2K")
@@ -61,7 +60,7 @@ def test_generate_passes_correct_aspect_ratio() -> None:
 
 def test_generate_passes_correct_resolution() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     generator.generate(svp=svp, resolution="1K")
@@ -78,7 +77,7 @@ def test_auto_aspect_ratio_fallback() -> None:
     payload["composition_layer"]["aspect_ratio"] = "auto"
     svp_auto = SVPVideo.model_validate(payload)
 
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
     result = generator.generate(svp=svp_auto, resolution="2K")
 
@@ -95,7 +94,7 @@ def test_auto_aspect_ratio_fallback() -> None:
 
 def test_cost_calculation() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     result = generator.generate(svp=svp, resolution="4K")
@@ -105,7 +104,7 @@ def test_cost_calculation() -> None:
 
 def test_raw_prompt_in_result() -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     result = generator.generate(svp=svp)
@@ -117,7 +116,7 @@ def test_generate_with_reference_image_passes_multimodal_contents(tmp_path: Path
     svp = _load("shibuya_dusk.json")
     reference = tmp_path / "reference.png"
     reference.write_bytes(TINY_PNG_BYTES)
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     generator.generate(svp=svp, reference_image_path=reference)
@@ -133,7 +132,7 @@ def test_generate_with_reference_image_passes_multimodal_contents(tmp_path: Path
 
 def test_reference_image_read_error_raises_value_error(tmp_path: Path) -> None:
     svp = _load("shibuya_dusk.json")
-    client = DummyClient(response=build_image_response(TINY_PNG_BYTES))
+    client = DummyClient(response=build_gemini_image_response(TINY_PNG_BYTES))
     generator = ImageGenerator(client=client)
 
     with pytest.raises(ValueError, match="failed to read reference image"):
