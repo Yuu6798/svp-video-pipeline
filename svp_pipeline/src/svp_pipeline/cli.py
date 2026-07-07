@@ -53,9 +53,13 @@ class _DefaultCommandGroup(TyperGroup):
     ran ``main`` directly with no subcommand name required. Registering a
     second command makes Typer build a ``Group`` instead, which normally
     requires the first token to name a registered subcommand. This override
-    prepends ``"main"`` whenever the first token is not a known subcommand
-    name (including when it is a plain prompt word or an option flag), so all
-    pre-existing invocation patterns keep working unchanged (AC1). It runs in
+    prepends ``"main"`` whenever the first token does not name one of the
+    *newly added* subcommands (e.g. ``probe-noise``), including when it is a
+    plain prompt word, an option flag, or -- critically -- the literal word
+    ``"main"`` itself (a legacy prompt may start with that word, e.g.
+    ``svp-video main character walking``; it must still be treated as prompt
+    text, not as an explicit ``main`` dispatch), so all pre-existing
+    invocation patterns keep working unchanged (AC1). It runs in
     ``parse_args`` (not ``resolve_command``) so the prefix is applied before
     Click's own arg/option parser ever sees the raw args -- doing it later
     would already be too late for a leading option like ``--dry-run``.
@@ -67,7 +71,8 @@ class _DefaultCommandGroup(TyperGroup):
     default_command_name = "main"
 
     def parse_args(self, ctx: typer.Context, args: list[str]) -> list[str]:
-        if not args or args[0] not in self.commands:
+        explicit_commands = set(self.commands) - {self.default_command_name}
+        if not args or args[0] not in explicit_commands:
             args = [self.default_command_name, *args]
         return super().parse_args(ctx, args)
 
