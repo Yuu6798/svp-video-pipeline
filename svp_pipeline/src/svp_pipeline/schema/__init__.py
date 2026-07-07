@@ -1,5 +1,7 @@
 """Pydantic schema exports for SVP.v4x-five-layer.video."""
 
+from __future__ import annotations
+
 from svp_pipeline.schema.svp import (
     C3,
     Axes,

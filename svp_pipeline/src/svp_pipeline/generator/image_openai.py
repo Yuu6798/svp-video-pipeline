@@ -10,14 +10,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
-try:
-    from openai import OpenAI, OpenAIError
-except ImportError:  # pragma: no cover - covered by dependency install in CI
-    OpenAI = Any  # type: ignore[assignment,misc]
-
-    class OpenAIError(Exception):
-        """Fallback OpenAIError when openai package is unavailable."""
-
+from openai import OpenAI, OpenAIError
 
 from ..exceptions import ImageAPIError, ImageRefusalError
 from ..schema import SVPVideo

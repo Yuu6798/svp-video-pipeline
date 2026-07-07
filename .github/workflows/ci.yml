@@ -3,22 +3,35 @@ name: CI
 on:
   push:
     branches: [main]
+    # memory-only push は discipline ゲートを失わない — memory-discipline.yml が担保する
+    paths-ignore: ['.claude/memory/**']
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  markdown-lint:
+  readme-check:
+    # Existence + non-empty check only (no external markdown-lint action).
+    # Line-count caps (README hard limit / CLAUDE.md cap) are enforced by
+    # svp_pipeline/tests/discipline/, not this job.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Lint README formatting
+      - name: Check README files exist and are non-empty
         run: |
           test -f README.md
           grep -q '[^[:space:]]' README.md
+          test -f svp_pipeline/README.md
+          grep -q '[^[:space:]]' svp_pipeline/README.md
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
