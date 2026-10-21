@@ -5,3 +5,6 @@
 
 # Claude Code エージェントの一時 worktree（セッション内並行作業用・コミット禁止）
 .claude/worktrees/
+
+# uv / venv のローカル仮想環境（uv.lock は追跡対象）
+.venv/

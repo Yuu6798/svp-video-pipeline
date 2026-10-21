@@ -22,7 +22,9 @@ Snapshot 等) は [`svp_pipeline/README.md`](svp_pipeline/README.md) を参照�
 ```bash
 git clone https://github.com/Yuu6798/svp-video-pipeline.git
 cd svp-video-pipeline/svp_pipeline
-pip install -e ".[dev]"
+uv sync --locked --extra dev   # 推奨: uv.lock どおりに .venv へ導入 (uv >= 0.11 が必要)
+source .venv/bin/activate      # (または各コマンドに `uv run` を前置)
+# uv を使わない場合の代替: pip install -e ".[dev]"
 cp .env.example .env   # API keys を記入
 svp-video "夕暮れの渋谷で少女が傘を畳む"
 ```

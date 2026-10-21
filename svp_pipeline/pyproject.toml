@@ -39,11 +39,37 @@ drive = [
     "google-auth-httplib2>=0.2",
 ]
 
+# 依存監査ツール専用 group（CI の dependency-audit job が `uv sync --only-group audit` で導入する）。
+# project の extras には含めない（利用者・テスト環境へ pip-audit を混ぜない）。
+[dependency-groups]
+audit = ["pip-audit>=2.7,<3"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/svp_pipeline"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/svp_pipeline/presets" = "svp_pipeline/presets"
+
+[tool.uv]
+# 公開から 7 日未満のリリースを lock / build 依存解決の対象から外す（dependabot の
+# cooldown は version-update PR にしか効かず、手動 `uv lock` は素通りするため）。
+# .github/dependabot.yml の cooldown.default-days と同値（7 日）に保つ。相対指定には uv >= 0.11 が必要。
+exclude-newer = "7 days"
+
+# 公開 7 日未満の版は、それを入れないと lock に既知脆弱性が残る（pip-audit が red になる）場合に限り、
+# 下記の一時 waiver でのみ lock に入れる。cutoff は修正版の公開直後の絶対時刻（UTC）で、
+# 残すと当該パッケージが 7 日ルールの外で黙って固定され続けるため、削除期限を
+# [tool.dependency-waivers] に併記する（tests/test_dependency_policy.py が検証する）。
+[tool.uv.exclude-newer-package]
+# pillow 13.0.0: CVE-2026-112395 ほか 7 件の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
+pillow = "2026-10-17T00:00:00Z"
+# certifi 2026.10.19: PYSEC-2026-4320 の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
+certifi = "2026-10-20T03:00:00Z"
+
+# tests/test_dependency_policy.py が参照。値 = この日までに waiver を削除して `uv lock`（超過で CI 赤）。削除可能日 = 修正版 upload + 7 日
+[tool.dependency-waivers]
+pillow = 2026-10-31   # 削除可能: 2026-10-24 以降
+certifi = 2026-11-04  # 削除可能: 2026-10-28 以降
 
 [tool.ruff]
 line-length = 100

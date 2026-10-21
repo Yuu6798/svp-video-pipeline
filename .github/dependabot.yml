@@ -1,0 +1,20 @@
+# 依存更新: uv.lock（svp_pipeline/ が uv プロジェクトルート）と GitHub Actions を週次で確認する。
+# cooldown: 公開直後の悪意あるリリースを取り込まないための 7 日の待機期間
+# （pyproject.toml の [tool.uv] exclude-newer と同値に保つ）。
+# Dependabot のセキュリティ更新は cooldown を飛ばすが、uv 側の exclude-newer (7 days) は効くため、
+# 公開 7 日未満の修正版は pyproject の exclude-newer-package waiver が必要
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/svp_pipeline"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
