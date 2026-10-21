@@ -81,7 +81,8 @@ jobs:
         run: uv run --no-sync pytest tests/ -q --tb=short
 
   dependency-audit:
-    # uv.lock の固定版を export した requirements（全 extras）を pip-audit で既知脆弱性照合する。
+    # uv.lock の固定版を export した requirements（全 extras + 全 dependency group）を
+    # pip-audit で既知脆弱性照合する。audit グループ（pip-audit 自身の閉包）も照合対象に含む。
     # 対象は runner プラットフォーム（Linux / 当該 CPython）に該当する行のみで、
     # win32 / darwin / emscripten 限定行は対象外。インストール環境は監査しない。
     runs-on: ubuntu-latest
@@ -120,8 +121,10 @@ jobs:
       - name: Install pip-audit (locked)
         run: uv sync --locked --only-group audit --no-install-project
 
-      - name: Export locked requirements (all extras)
-        run: uv export --frozen --all-extras --no-emit-project --no-hashes -o "$RUNNER_TEMP/audit-requirements.txt"
+      # --all-groups: audit グループ（pip-audit 自身の閉包。CI が実際に導入・実行する側）も
+      # export に含め、照合対象から外さない。
+      - name: Export locked requirements (all extras, all groups)
+        run: uv export --frozen --all-extras --all-groups --no-emit-project --no-hashes -o "$RUNNER_TEMP/audit-requirements.txt"
 
       # --disable-pip: pip の依存解決(dry-run install)を介さず、固定版そのものを照合する。
       # --strict: 依存収集に失敗したら監査全体を失敗させる。
