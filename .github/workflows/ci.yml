@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Dependabot は action タグ（setup-uv）のみ更新するため、uv 本体の版は本変数で手動更新する。
+  UV_VERSION: "0.11.32"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -61,15 +65,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
-          version: '0.11.32'
+          version: ${{ env.UV_VERSION }}
 
       # --locked: uv.lock が pyproject.toml と食い違っていたら更新せず失敗する。
-      # --no-install-project: プロジェクト本体を build/install しない。build backend
-      # (hatchling 等) は lock 管理外で PyPI から 7 日以上前の最新版（exclude-newer）を
-      # 取得して実行されるため、CI を lock 済み・hash 検証済みの依存のみに限定する。
-      # テストは [tool.pytest.ini_options] pythonpath = ["src"] で src を直接参照する。
+      # プロジェクト本体もインストールする（hatchling build・entry point `svp-video`・
+      # presets の force-include を CI で検証するため）。build backend は uv.lock の管理外で、
+      # PyPI から 7 日以上前の最新版（exclude-newer）が hash 検証なしで取得・実行される。
       - name: Install (locked)
-        run: uv sync --locked --extra dev --no-install-project
+        run: uv sync --locked --extra dev
 
       - name: Lint
         run: uv run --no-sync ruff check src tests
@@ -78,8 +81,9 @@ jobs:
         run: uv run --no-sync pytest tests/ -q --tb=short
 
   dependency-audit:
-    # uv.lock の全依存（全 extras）を pip-audit で既知脆弱性照合する。
-    # 監査対象は export した固定版 requirements のみで、インストール環境ではない。
+    # uv.lock の固定版を export した requirements（全 extras）を pip-audit で既知脆弱性照合する。
+    # 対象は runner プラットフォーム（Linux / 当該 CPython）に該当する行のみで、
+    # win32 / darwin / emscripten 限定行は対象外。インストール環境は監査しない。
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -107,14 +111,14 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.3.0
         with:
-          version: '0.11.32'
+          version: ${{ env.UV_VERSION }}
 
-      # pip-audit 自体も uv.lock 管理の dev 依存。--locked が lock の鮮度ゲートを兼ねる
-      # ため、後続の export は --frozen（再 lock・鮮度確認なし）で足りる。
-      # --no-install-project: 監査にプロジェクト本体は不要で、lock 外の build backend
-      # を PyPI から取得・実行させない。
-      - name: Install (locked)
-        run: uv sync --locked --extra dev --no-install-project
+      # pip-audit は [dependency-groups] audit（uv.lock 管理）。--only-group audit はこの
+      # グループのみを導入し、プロジェクト本体は build/install しない（--no-install-project は
+      # その明示。lock 外の build backend を取得・実行させない）。--locked が lock の鮮度
+      # ゲートを兼ねるため、後続の export は --frozen（再 lock・鮮度確認なし）で足りる。
+      - name: Install pip-audit (locked)
+        run: uv sync --locked --only-group audit --no-install-project
 
       - name: Export locked requirements (all extras)
         run: uv export --frozen --all-extras --no-emit-project --no-hashes -o "$RUNNER_TEMP/audit-requirements.txt"

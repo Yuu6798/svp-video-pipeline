@@ -1866,7 +1866,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "pip-audit" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
@@ -1876,6 +1875,11 @@ drive = [
     { name = "google-api-python-client" },
     { name = "google-auth-httplib2" },
     { name = "google-auth-oauthlib" },
+]
+
+[package.dev-dependencies]
+audit = [
+    { name = "pip-audit" },
 ]
 
 [package.metadata]
@@ -1890,7 +1894,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "openai", specifier = ">=1.30" },
     { name = "pillow", specifier = ">=10.0" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7,<3" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
@@ -1901,6 +1904,9 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["dev", "drive"]
+
+[package.metadata.requires-dev]
+audit = [{ name = "pip-audit", specifier = ">=2.7,<3" }]
 
 [[package]]
 name = "tenacity"

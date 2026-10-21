@@ -229,6 +229,6 @@ Codex が PR を作成する場合は [`AGENTS.md`](AGENTS.md) §2 の Completio
   `cd svp_pipeline && uv sync --locked --extra dev`（uv >= 0.11: 相対 `exclude-newer` 構文のため。
   `pip install -e ".[dev]"` は代替）。`pyproject.toml` の依存を変えたら `uv lock` で lock も同じ PR で更新する
   （`[tool.uv] exclude-newer = "7 days"` により公開 7 日未満の版は解決対象外。例外は
-  `[tool.uv.exclude-newer-package]` に、理由と削除期限を書いた日付付き waiver として記す。期限切れは
-  `tests/discipline/test_uv_waivers.py` が検出する）
+  `[tool.uv.exclude-newer-package]` に一時 waiver として置き、削除期限を `[tool.dependency-waivers]` に
+  併記する。期限超過・期限欠落は `svp_pipeline/tests/test_dependency_policy.py` が CI 失敗にする）
 - CI 固有のワークフロー詳細は `.github/workflows/*.yml` と `docs/` に記述する
