@@ -7,6 +7,10 @@ on:
     paths-ignore: ['.claude/memory/**']
   pull_request:
 
+# 最小権限: 本ワークフローはリポジトリ内容の読み取りしか行わない。
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -36,6 +40,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.11', '3.12']
+    env:
+      # setup-python が PATH に置いた matrix 版の interpreter を uv に使わせる。
+      # downloads=never により、見つからない場合は別版を黙って取得せず失敗する。
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_PYTHON_DOWNLOADS: never
     defaults:
       run:
         working-directory: svp_pipeline
@@ -47,14 +56,70 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: svp_pipeline/pyproject.toml
 
-      - name: Install
-        run: pip install -e ".[dev]"
+      # setup-uv は v8 以降 floating な major タグを持たないため完全タグで固定する。
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: '0.11.32'
+
+      # --locked: uv.lock が pyproject.toml と食い違っていたら更新せず失敗する。
+      # --no-install-project: プロジェクト本体を build/install しない。build backend
+      # (hatchling 等) は lock 管理外で PyPI から 7 日以上前の最新版（exclude-newer）を
+      # 取得して実行されるため、CI を lock 済み・hash 検証済みの依存のみに限定する。
+      # テストは [tool.pytest.ini_options] pythonpath = ["src"] で src を直接参照する。
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --no-install-project
 
       - name: Lint
-        run: ruff check src tests
+        run: uv run --no-sync ruff check src tests
 
       - name: Test
-        run: pytest tests/ -q --tb=short
+        run: uv run --no-sync pytest tests/ -q --tb=short
+
+  dependency-audit:
+    # uv.lock の全依存（全 extras）を pip-audit で既知脆弱性照合する。
+    # 監査対象は export した固定版 requirements のみで、インストール環境ではない。
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # uv export は environment marker を残したまま出力し、pip-audit（--disable-pip）が
+        # 実行 interpreter に対して評価する。lock の python 版 fork（numpy 等）を
+        # 網羅するよう両版で回す。
+        python-version: ['3.11', '3.12']
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_PYTHON_DOWNLOADS: never
+    defaults:
+      run:
+        working-directory: svp_pipeline
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: '0.11.32'
+
+      # pip-audit 自体も uv.lock 管理の dev 依存。--locked が lock の鮮度ゲートを兼ねる
+      # ため、後続の export は --frozen（再 lock・鮮度確認なし）で足りる。
+      # --no-install-project: 監査にプロジェクト本体は不要で、lock 外の build backend
+      # を PyPI から取得・実行させない。
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --no-install-project
+
+      - name: Export locked requirements (all extras)
+        run: uv export --frozen --all-extras --no-emit-project --no-hashes -o "$RUNNER_TEMP/audit-requirements.txt"
+
+      # --disable-pip: pip の依存解決(dry-run install)を介さず、固定版そのものを照合する。
+      # --strict: 依存収集に失敗したら監査全体を失敗させる。
+      - name: pip-audit
+        run: uv run --no-sync pip-audit --strict --no-deps --disable-pip -r "$RUNNER_TEMP/audit-requirements.txt"

@@ -26,7 +26,9 @@ Python 3.11 or newer is required.
 
 ```bash
 cd svp_pipeline
-pip install -e ".[dev]"
+uv sync --locked --extra dev   # recommended: installs the uv.lock-pinned deps into .venv (needs uv >= 0.11)
+source .venv/bin/activate      # (or prefix commands with `uv run`)
+# alternative without uv: pip install -e ".[dev]"
 cp .env.example .env   # fill in API keys
 ```
 

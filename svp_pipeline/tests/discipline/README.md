@@ -16,6 +16,9 @@ AGENTS.md §8）を CI 失敗に変換する実行可能チェック群。
   ポインタ化）。
 - `test_readme_line_cap.py`: ルート `README.md` と `svp_pipeline/README.md`
   はともに 350 行以内（README 管理ポリシーの hard limit）。
+- `test_uv_waivers.py`: `pyproject.toml` の `[tool.uv.exclude-newer-package]`
+  waiver が waiver 時刻から 14 日を超えて残っていない（絶対日時の waiver は
+  7 日ルールの窓を超えて黙って固定するため、期限切れを CI 失敗にする）。
 
 各テストは実ファイル検査に加えて `fixtures/` の違反サンプルに対する
 self-test を持ち、パーサ自体の劣化（違反を検出できなくなる drift）を防ぐ。

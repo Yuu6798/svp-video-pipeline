@@ -32,6 +32,7 @@ dev = [
     "ruff>=0.4",
     "pytest-mock>=3.12",
     "pytest-cov>=4.0",
+    "pip-audit>=2.7,<3",
 ]
 drive = [
     "google-api-python-client>=2.120",
@@ -44,6 +45,22 @@ packages = ["src/svp_pipeline"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/svp_pipeline/presets" = "svp_pipeline/presets"
+
+[tool.uv]
+# 公開から 7 日未満のリリースを lock / build 依存解決の対象から外す（dependabot の
+# cooldown は version-update PR にしか効かず、手動 `uv lock` は素通りするため）。
+# .github/dependabot.yml の cooldown.default-days と同値（7 日）に保つ。相対指定には uv >= 0.11 が必要。
+exclude-newer = "7 days"
+
+# 公開 7 日未満の版は、それを入れないと lock に既知脆弱性が残る（pip-audit が red になる）場合に限り、
+# 下記の期限付き waiver でのみ lock に入れる。cutoff は修正版の公開直後の絶対時刻（UTC）で、
+# 7 日ルールの窓を超えて残ると当該パッケージが黙って固定されるため、
+# tests/discipline/test_uv_waivers.py が 14 日超過の waiver を失敗させる。
+[tool.uv.exclude-newer-package]
+# pillow 13.0.0: CVE-2026-112395 ほか 7 件の修正版が公開 7 日未満のため一時 waiver。2026-10-24 以降に削除して `uv lock` を実行（tests/discipline の期限テストが 14 日超過で失敗する）
+pillow = "2026-10-17T00:00:00Z"
+# certifi 2026.10.19: PYSEC-2026-4320 の修正版が公開 7 日未満のため一時 waiver。2026-10-28 以降に削除して `uv lock` を実行（tests/discipline の期限テストが 14 日超過で失敗する）
+certifi = "2026-10-20T03:00:00Z"
 
 [tool.ruff]
 line-length = 100

@@ -15,6 +15,10 @@ on:
     branches: [main]
     paths: ['.claude/memory/**']
 
+# 最小権限: checkout と pytest 実行のみで書き込み系 API は一切使わない。
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
