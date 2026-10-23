@@ -13,7 +13,7 @@ permissions:
 
 env:
   # Dependabot は action タグ（setup-uv）のみ更新するため、uv 本体の版は本変数で手動更新する。
-  UV_VERSION: "0.11.32"
+  UV_VERSION: "0.13.5"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
