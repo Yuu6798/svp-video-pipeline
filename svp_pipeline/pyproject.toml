@@ -65,11 +65,14 @@ exclude-newer = "7 days"
 pillow = "2026-10-17T00:00:00Z"
 # certifi 2026.10.19: PYSEC-2026-4320 の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
 certifi = "2026-10-20T03:00:00Z"
+# pip 26.2.2: emSign ECC Root CA - G3 を信頼する旧 certifi 同梱の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
+pip = "2026-10-20T16:40:00Z"
 
 # tests/test_dependency_policy.py が参照。値 = この日までに waiver を削除して `uv lock`（超過で CI 赤）。削除可能日 = 修正版 upload + 7 日
 [tool.dependency-waivers]
 pillow = 2026-10-31   # 削除可能: 2026-10-24 以降
 certifi = 2026-11-04  # 削除可能: 2026-10-28 以降
+pip = 2026-11-04      # 削除可能: 2026-10-27 以降
 
 [tool.ruff]
 line-length = 100
