@@ -65,11 +65,14 @@ exclude-newer = "7 days"
 certifi = "2026-10-20T03:00:00Z"
 # pip 26.2.2: emSign ECC Root CA - G3 を信頼する旧 certifi 同梱の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
 pip = "2026-10-20T16:40:00Z"
+# pyasn1 0.6.5: CVE-2026-119194 ほか 3 件の修正版が公開 7 日未満のため一時 waiver。期限は [tool.dependency-waivers]
+pyasn1 = "2026-10-27T06:32:50Z"
 
 # tests/test_dependency_policy.py が参照。値 = この日までに waiver を削除して `uv lock`（超過で CI 赤）。削除可能日 = 修正版 upload + 7 日
 [tool.dependency-waivers]
 certifi = 2026-11-04  # 削除可能: 2026-10-28 以降
 pip = 2026-11-04      # 削除可能: 2026-10-27 以降
+pyasn1 = 2026-11-03   # 削除可能: 2026-11-03 06:32:50 UTC 以降
 
 [tool.ruff]
 line-length = 100
